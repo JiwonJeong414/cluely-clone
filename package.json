@@ -8,7 +8,8 @@
     "dev:electron": "wait-on http://localhost:5173 && npm run build:electron && cross-env NODE_ENV=development electron .",
     "build": "npm run build:vite && npm run build:electron",
     "build:vite": "vite build",
-    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:electron": "tsc -p electron/tsconfig.json && npm run postbuild:electron",
+    "postbuild:electron": "mkdir -p dist-electron/services dist-electron/database && cp -r dist/services/* dist-electron/services/ && cp -r dist/database/* dist-electron/database/",
     "preview": "vite preview",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
@@ -18,6 +19,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/node": "^24.0.4",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
@@ -33,8 +35,12 @@
     "wait-on": "^8.0.3"
   },
   "dependencies": {
+    "@prisma/client": "^6.10.1",
     "@radix-ui/react-toast": "^1.2.14",
+    "dotenv": "^16.5.0",
+    "googleapis": "^150.0.1",
     "lucide-react": "^0.522.0",
+    "prisma": "^6.10.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

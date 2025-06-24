@@ -1,19 +1,56 @@
+// @ts-ignore
 import { app, BrowserWindow, ipcMain, globalShortcut, screen, desktopCapturer } from 'electron'
 import { join } from 'path'
+import dotenv from 'dotenv'
+import type { SyncProgress } from '../src/services/drive/DriveService'
+
+// Load environment variables
+dotenv.config()
 
 const isDev = process.env.NODE_ENV === 'development'
 
 let mainWindow: BrowserWindow | null = null
 let isWindowVisible = false
 
+// Service instances
+let authService: any
+let driveService: any
+let dbService: any
+
+async function initializeServices() {
+  try {
+    console.log('Initializing services...')
+    
+    // Dynamically import services
+    const { DatabaseService } = await import('../src/database/DatabaseService')
+    const { AuthService } = await import('../src/services/auth/AuthService')
+    const { DriveService } = await import('../src/services/drive/DriveService')
+    
+    // Initialize database first
+    dbService = DatabaseService.getInstance()
+    await dbService.initialize()
+    
+    // Initialize auth service
+    authService = AuthService.getInstance()
+    await authService.loadUserFromStorage()
+    
+    // Initialize drive service
+    driveService = DriveService.getInstance()
+    
+    console.log('✅ Services initialized successfully')
+  } catch (error) {
+    console.error('❌ Failed to initialize services:', error)
+  }
+}
+
 function createWindow() {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
   mainWindow = new BrowserWindow({
-    width: 400,
-    height: 140,
-    x: Math.floor(screenWidth / 2 - 200),
+    width: 500,
+    height: 200, // Increased for Drive UI
+    x: Math.floor(screenWidth / 2 - 250),
     y: 80,
     webPreferences: {
       nodeIntegration: false,
@@ -31,10 +68,10 @@ function createWindow() {
     resizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    minWidth: 300, 
-    minHeight: 80,
-    maxWidth: 600, 
-    maxHeight: 300,
+    minWidth: 400, 
+    minHeight: 120,
+    maxWidth: 800, 
+    maxHeight: 600, // Increased for Drive content
     movable: true,
     useContentSize: false,
     thickFrame: false,
@@ -106,7 +143,8 @@ function registerGlobalShortcuts() {
   const testShortcut = 'Cmd+Shift+T'
   const toggleShortcut = process.platform === 'darwin' ? 'Cmd+Space' : 'Ctrl+Space'
   const centerShortcut = 'Cmd+Shift+C'
-  const screenshotShortcut = 'Cmd+Shift+S' // New shortcut for quick screenshot
+  const screenshotShortcut = 'Cmd+Shift+S'
+  const driveShortcut = 'Cmd+Shift+D' // New shortcut for Drive
   
   try {
     globalShortcut.register(testShortcut, () => {
@@ -128,7 +166,6 @@ function registerGlobalShortcuts() {
       centerWindow()
     })
 
-    // New shortcut for quick screenshot analysis
     globalShortcut.register(screenshotShortcut, async () => {
       if (mainWindow) {
         try {
@@ -140,10 +177,18 @@ function registerGlobalShortcuts() {
       }
     })
 
+    // New Drive shortcut
+    globalShortcut.register(driveShortcut, () => {
+      if (mainWindow) {
+        mainWindow.webContents.send('toggle-drive-mode')
+      }
+    })
+
     console.log('Global shortcuts registered successfully')
     console.log('- Cmd+Space: Toggle window')
     console.log('- Cmd+Shift+C: Center window')
     console.log('- Cmd+Shift+S: Quick screenshot analysis')
+    console.log('- Cmd+Shift+D: Toggle Drive mode')
   } catch (error) {
     console.error('Error registering shortcuts:', error)
   }
@@ -210,8 +255,9 @@ async function captureScreenById(sourceId: string): Promise<string> {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.log('App ready, initializing...')
+  await initializeServices()
   createWindow()
   registerGlobalShortcuts()
   console.log('Initialization complete')
@@ -266,8 +312,8 @@ ipcMain.handle('update-content-dimensions', async (event, { width, height }) => 
   try {
     const currentBounds = mainWindow.getBounds()
     const padding = 20
-    const newWidth = Math.max(Math.min(width + padding, 600), 300)
-    const newHeight = Math.max(Math.min(height + padding, 300), 80)
+    const newWidth = Math.max(Math.min(width + padding, 800), 400) // Updated max width
+    const newHeight = Math.max(Math.min(height + padding, 600), 120) // Updated max height
     
     mainWindow.setSize(newWidth, newHeight, true)
     console.log('Window resized successfully')
@@ -296,7 +342,7 @@ ipcMain.handle('center-window', () => {
   centerWindow()
 })
 
-// New IPC handlers for screen capture
+// Screen capture IPC handlers
 ipcMain.handle('capture-screen', async () => {
   try {
     return await captureScreen()
@@ -326,4 +372,214 @@ ipcMain.handle('capture-screen-by-id', async (event, sourceId: string) => {
 
 ipcMain.on('shortcut-test-success', () => {
   console.log('Shortcut test success received')
+})
+
+// ========== NEW DRIVE IPC HANDLERS ==========
+
+// Authentication handlers
+ipcMain.handle('auth-get-user', async () => {
+  try {
+    return authService.getCurrentUser()
+  } catch (error) {
+    console.error('Error getting user:', error)
+    return null
+  }
+})
+
+ipcMain.handle('auth-sign-in', async () => {
+  try {
+    const user = await authService.signInWithGoogle()
+    return { success: true, user }
+  } catch (error) {
+    console.error('Error signing in:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Sign in failed' }
+  }
+})
+
+ipcMain.handle('auth-sign-out', async () => {
+  try {
+    await authService.signOut()
+    return { success: true }
+  } catch (error) {
+    console.error('Error signing out:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Sign out failed' }
+  }
+})
+
+ipcMain.handle('auth-get-drive-connection', async () => {
+  try {
+    return authService.getDriveConnection()
+  } catch (error) {
+    console.error('Error getting drive connection:', error)
+    return { isConnected: false }
+  }
+})
+
+// Drive handlers
+ipcMain.handle('drive-sync', async (event, options = {}) => {
+  try {
+    const limit = options.limit || 10
+    
+    const result = await driveService.syncFiles(
+      (progress: SyncProgress) => {
+        // Send progress updates to renderer
+        mainWindow?.webContents.send('drive-sync-progress', progress)
+      },
+      limit
+    )
+    
+    return { success: true, result }
+  } catch (error) {
+    console.error('Error syncing drive:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Sync failed' }
+  }
+})
+
+ipcMain.handle('drive-search', async (event, query: string, limit = 5) => {
+  try {
+    const results = await driveService.searchDocuments(query, limit)
+    return { success: true, results }
+  } catch (error) {
+    console.error('Error searching drive:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Search failed' }
+  }
+})
+
+ipcMain.handle('drive-list-files', async (event, options = {}) => {
+  try {
+    const files = await driveService.listFiles(options)
+    return { success: true, files }
+  } catch (error) {
+    console.error('Error listing files:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to list files' }
+  }
+})
+
+ipcMain.handle('drive-delete-file', async (event, fileId: string) => {
+  try {
+    await driveService.deleteFile(fileId)
+    return { success: true }
+  } catch (error) {
+    console.error('Error deleting file:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to delete file' }
+  }
+})
+
+ipcMain.handle('drive-create-folder', async (event, name: string) => {
+  try {
+    const folderId = await driveService.createFolder(name)
+    return { success: true, folderId }
+  } catch (error) {
+    console.error('Error creating folder:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to create folder' }
+  }
+})
+
+ipcMain.handle('drive-move-file', async (event, fileId: string, folderId: string) => {
+  try {
+    await driveService.moveFileToFolder(fileId, folderId)
+    return { success: true }
+  } catch (error) {
+    console.error('Error moving file:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to move file' }
+  }
+})
+
+// Database handlers
+ipcMain.handle('db-get-indexed-files', async () => {
+  try {
+    const user = authService.getCurrentUser()
+    if (!user) return { success: false, error: 'User not authenticated' }
+    
+    const files = await dbService.getDocuments(user.id)
+    return { success: true, files }
+  } catch (error) {
+    console.error('Error getting indexed files:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to get files' }
+  }
+})
+
+ipcMain.handle('db-get-cleanup-candidates', async (event, maxFiles = 50) => {
+  try {
+    const user = authService.getCurrentUser()
+    if (!user) return { success: false, error: 'User not authenticated' }
+    
+    // Get files that might be good candidates for cleanup
+    const candidates = await dbService.getCleanupCandidates(user.id, maxFiles)
+    return { success: true, candidates }
+  } catch (error) {
+    console.error('Error getting cleanup candidates:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to get cleanup candidates' }
+  }
+})
+
+// Cleanup batch operations
+ipcMain.handle('drive-delete-files', async (event, fileIds: string[]) => {
+  try {
+    const results = []
+    let successCount = 0
+    let errorCount = 0
+    
+    for (const fileId of fileIds) {
+      try {
+        await driveService.deleteFile(fileId)
+        results.push({ fileId, success: true })
+        successCount++
+      } catch (error) {
+        results.push({ 
+          fileId, 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        })
+        errorCount++
+      }
+    }
+    
+    return { 
+      success: true, 
+      results, 
+      summary: { 
+        total: fileIds.length, 
+        successful: successCount, 
+        errors: errorCount 
+      } 
+    }
+  } catch (error) {
+    console.error('Error in batch delete:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Batch delete failed' }
+  }
+})
+
+// Organization handlers
+ipcMain.handle('drive-organize-files', async (event, organizationPlan) => {
+  try {
+    const user = authService.getCurrentUser()
+    if (!user) return { success: false, error: 'User not authenticated' }
+    
+    // Import the organization service
+    const { OrganizationService } = await import('../src/services/organization/OrganizationService')
+    const orgService = new OrganizationService(driveService, dbService)
+    
+    const result = await orgService.executeOrganization(user.id, organizationPlan)
+    return { success: true, result }
+  } catch (error) {
+    console.error('Error organizing files:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Organization failed' }
+  }
+})
+
+ipcMain.handle('drive-analyze-for-organization', async (event, options = {}) => {
+  try {
+    const user = authService.getCurrentUser()
+    if (!user) return { success: false, error: 'User not authenticated' }
+    
+    const { OrganizationService } = await import('../src/services/organization/OrganizationService')
+    const orgService = new OrganizationService(driveService, dbService)
+    
+    const analysis = await orgService.analyzeForOrganization(user.id, options)
+    return { success: true, analysis }
+  } catch (error) {
+    console.error('Error analyzing for organization:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Analysis failed' }
+  }
 })

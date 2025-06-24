@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { initializeOpenAI, getOpenAI, type ChatMessage } from './api/openai'
+import type { User, DriveConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster } from '../electron/preload'
 
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
@@ -15,39 +16,61 @@ interface Message {
   timestamp: Date
   hasScreenshot?: boolean
   screenshotUrl?: string
+  driveContext?: any[]
 }
 
-interface ScreenSource {
-  id: string
-  name: string
-  thumbnail: string
-  display_id: string
-}
+type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize'
 
 function App() {
+  // Existing state
   const [appVersion, setAppVersion] = useState<string>('')
-  const [shortcutTestSuccess, setShortcutTestSuccess] = useState<boolean>(false)
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [isChatMode, setIsChatMode] = useState(false)
   const [currentResponse, setCurrentResponse] = useState<Message | null>(null)
   const [streamingText, setStreamingText] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
-  const [availableScreens, setAvailableScreens] = useState<ScreenSource[]>([])
-  const [isCapturing, setIsCapturing] = useState(false)
-  const [showScreenOptions, setShowScreenOptions] = useState(false)
-  const [lastScreenshot, setLastScreenshot] = useState<string | null>(null)
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  
+  // New Drive state
+  const [currentMode, setCurrentMode] = useState<AppMode>('chat')
+  const [user, setUser] = useState<User | null>(null)
+  const [driveConnection, setDriveConnection] = useState<DriveConnection>({ isConnected: false })
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
+  const [cleanupCandidates, setCleanupCandidates] = useState<CleanupCandidate[]>([])
+  const [organizationClusters, setOrganizationClusters] = useState<OrganizationCluster[]>([])
+  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([])
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [searchResults, setSearchResults] = useState<any[]>([])
   
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const headerRef = useRef<HTMLDivElement>(null)
 
+  // Load user data on startup
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (window.electronAPI?.auth) {
+        try {
+          const userData = await window.electronAPI.auth.getUser()
+          if (userData) {
+            setUser(userData)
+            
+            const connection = await window.electronAPI.auth.getDriveConnection()
+            setDriveConnection(connection)
+          }
+        } catch (error) {
+          console.error('Error loading user data:', error)
+        }
+      }
+    }
+
+    loadUserData()
+  }, [])
+
+  // Update dimensions when content changes
   const updateDimensions = useCallback(() => {
     if (contentRef.current && window.electronAPI?.updateContentDimensions) {
       requestAnimationFrame(() => {
@@ -64,132 +87,158 @@ function App() {
     }
   }, [])
 
-  const scrollToBottom = useCallback(() => {
-    if (messagesContainerRef.current) {
-      requestAnimationFrame(() => {
-        if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+  // Authentication functions
+  const handleSignIn = async () => {
+    if (!window.electronAPI?.auth) return
+    
+    setIsAuthenticating(true)
+    try {
+      const result = await window.electronAPI.auth.signIn()
+      if (result.success && result.user) {
+        setUser(result.user)
+        
+        // Refresh drive connection
+        const connection = await window.electronAPI.auth.getDriveConnection()
+        setDriveConnection(connection)
+      } else {
+        console.error('Sign in failed:', result.error)
+      }
+    } catch (error) {
+      console.error('Error signing in:', error)
+    } finally {
+      setIsAuthenticating(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    if (!window.electronAPI?.auth) return
+    
+    try {
+      await window.electronAPI.auth.signOut()
+      setUser(null)
+      setDriveConnection({ isConnected: false })
+      setCurrentMode('chat')
+    } catch (error) {
+      console.error('Error signing out:', error)
+    }
+  }
+
+  // Drive sync function
+  const handleSync = async () => {
+    if (!window.electronAPI?.drive || !user) return
+    
+    setIsSyncing(true)
+    setSyncProgress(null)
+    
+    try {
+      const result = await window.electronAPI.drive.sync({ limit: 10 })
+      if (result.success) {
+        console.log('Sync completed:', result.result)
+        
+        // Refresh indexed files
+        const filesResult = await window.electronAPI.db.getIndexedFiles()
+        if (filesResult.success) {
+          // Convert to DriveFile format if needed
         }
+      } else {
+        console.error('Sync failed:', result.error)
+      }
+    } catch (error) {
+      console.error('Error syncing:', error)
+    } finally {
+      setIsSyncing(false)
+      setSyncProgress(null)
+    }
+  }
+
+  // Search Drive documents
+  const handleDriveSearch = async (query: string) => {
+    if (!window.electronAPI?.drive || !user) return
+    
+    try {
+      const result = await window.electronAPI.drive.search(query, 5)
+      if (result.success) {
+        setSearchResults(result.results || [])
+        
+        // Add Drive context to chat if we have results
+        if (result.results && result.results.length > 0) {
+          const driveContextMessage = `Based on your Google Drive documents:\n\n${result.results
+            .map(r => `📄 ${r.fileName}: ${r.content.substring(0, 100)}...`)
+            .join('\n\n')}\n\nUser question: ${query}`
+          
+          await sendMessage(driveContextMessage, undefined, result.results)
+        }
+      }
+    } catch (error) {
+      console.error('Error searching Drive:', error)
+    }
+  }
+
+  // Load cleanup candidates
+  const loadCleanupCandidates = async () => {
+    if (!window.electronAPI?.db || !user) return
+    
+    try {
+      const result = await window.electronAPI.db.getCleanupCandidates(50)
+      if (result.success) {
+        setCleanupCandidates(result.candidates || [])
+      }
+    } catch (error) {
+      console.error('Error loading cleanup candidates:', error)
+    }
+  }
+
+  // Delete files
+  const handleDeleteFiles = async (fileIds: string[]) => {
+    if (!window.electronAPI?.drive || !user) return
+    
+    try {
+      const result = await window.electronAPI.drive.deleteFiles(fileIds)
+      if (result.success) {
+        console.log('Delete completed:', result.summary)
+        
+        // Remove deleted files from candidates
+        setCleanupCandidates(prev => 
+          prev.filter(candidate => !fileIds.includes(candidate.id))
+        )
+      }
+    } catch (error) {
+      console.error('Error deleting files:', error)
+    }
+  }
+
+  // Analyze for organization
+  const analyzeForOrganization = async () => {
+    if (!window.electronAPI?.drive || !user) return
+    
+    setIsAnalyzing(true)
+    try {
+      const result = await window.electronAPI.drive.analyzeForOrganization({
+        method: 'hybrid',
+        maxClusters: 6,
+        minClusterSize: 3
       })
-    }
-  }, [])
-
-  // Format response text with bold sections and lists
-  const formatResponse = (text: string) => {
-    // Split by double asterisks for bold sections
-    const parts = text.split(/(\*\*.*?\*\*)/g)
-    
-    return parts.map((part, index) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return (
-          <span key={index} className="font-semibold text-blue-200">
-            {part.slice(2, -2)}
-          </span>
-        )
-      }
       
-      // Handle numbered lists
-      if (part.includes('\n') && /^\d+\./.test(part.trim())) {
-        const lines = part.split('\n').filter(line => line.trim())
-        return (
-          <div key={index} className="space-y-2">
-            {lines.map((line, lineIndex) => {
-              if (/^\d+\./.test(line.trim())) {
-                return (
-                  <div key={lineIndex} className="flex gap-3">
-                    <span className="text-blue-300 font-medium text-sm mt-0.5 flex-shrink-0">
-                      {line.match(/^\d+/)?.[0]}.
-                    </span>
-                    <span className="text-white/90 leading-relaxed">
-                      {line.replace(/^\d+\.\s*/, '')}
-                    </span>
-                  </div>
-                )
-              }
-              return (
-                <p key={lineIndex} className="text-white/90 leading-relaxed">
-                  {line}
-                </p>
-              )
-            })}
-          </div>
-        )
+      if (result.success) {
+        setOrganizationClusters(result.analysis?.clusters || [])
       }
-      
-      return (
-        <span key={index} className="text-white/90 leading-relaxed">
-          {part}
-        </span>
-      )
-    })
-  }
-
-  // Copy to clipboard functionality
-  const copyToClipboard = async (text: string, messageId: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedMessageId(messageId)
-      setTimeout(() => setCopiedMessageId(null), 2000)
-    } catch (err) {
-      console.error('Failed to copy text: ', err)
+    } catch (error) {
+      console.error('Error analyzing for organization:', error)
+    } finally {
+      setIsAnalyzing(false)
     }
   }
 
-  // Load available screens
-  const loadAvailableScreens = useCallback(async () => {
-    if (window.electronAPI?.getAvailableScreens) {
-      try {
-        const screens = await window.electronAPI.getAvailableScreens()
-        setAvailableScreens(screens)
-      } catch (error) {
-        console.error('Error loading available screens:', error)
-      }
-    }
-  }, [])
-
-  // Capture primary screen
-  const captureScreen = useCallback(async () => {
-    if (!window.electronAPI?.captureScreen) return null
-    
-    setIsCapturing(true)
-    try {
-      const screenshot = await window.electronAPI.captureScreen()
-      setLastScreenshot(screenshot)
-      return screenshot
-    } catch (error) {
-      console.error('Error capturing screen:', error)
-      return null
-    } finally {
-      setIsCapturing(false)
-    }
-  }, [])
-
-  // Capture specific screen by ID
-  const captureScreenById = useCallback(async (sourceId: string) => {
-    if (!window.electronAPI?.captureScreenById) return null
-    
-    setIsCapturing(true)
-    try {
-      const screenshot = await window.electronAPI.captureScreenById(sourceId)
-      setLastScreenshot(screenshot)
-      return screenshot
-    } catch (error) {
-      console.error('Error capturing screen by ID:', error)
-      return null
-    } finally {
-      setIsCapturing(false)
-    }
-  }, [])
-
-  // Send message to OpenAI with optional screenshot
-  const sendMessage = async (userMessage: string, screenshotDataUrl?: string) => {
+  // Send message with Drive context
+  const sendMessage = async (userMessage: string, screenshotDataUrl?: string, driveContext?: any[]) => {
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: userMessage,
       timestamp: new Date(),
       hasScreenshot: !!screenshotDataUrl,
-      screenshotUrl: screenshotDataUrl
+      screenshotUrl: screenshotDataUrl,
+      driveContext
     }
 
     setCurrentResponse(null)
@@ -199,63 +248,66 @@ function App() {
     setInputValue('')
 
     try {
-      console.log('Sending message with screenshot to OpenAI Vision API...')
       const openai = getOpenAI()
       
+      // Build context-aware message
+      let contextualContent = userMessage
+      if (driveContext && driveContext.length > 0) {
+        const driveContextText = driveContext
+          .map(ctx => `Document: ${ctx.fileName}\nContent: ${ctx.content.substring(0, 500)}...`)
+          .join('\n\n')
+        
+        contextualContent = `Based on the following documents from Google Drive:\n\n${driveContextText}\n\nUser question: ${userMessage}`
+      }
+      
       if (screenshotDataUrl) {
-        // Use vision API for screenshot analysis
+        // Use vision API
         let fullResponse = ''
         await openai.analyzeScreenshotStream(
           screenshotDataUrl,
           (chunk: string) => {
-            console.log('Received chunk:', chunk)
             fullResponse += chunk
             setStreamingText(fullResponse)
-            requestAnimationFrame(() => {
-              updateDimensions()
-            })
+            requestAnimationFrame(() => updateDimensions())
           },
-          userMessage
+          contextualContent
         )
         
-        console.log('Full response received:', fullResponse)
         const assistantMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: fullResponse,
-          timestamp: new Date()
+          timestamp: new Date(),
+          driveContext
         }
 
         setCurrentResponse(assistantMsg)
       } else {
-        console.log('Sending regular text message...')
         // Regular text chat
-        const contextMessages: Message[] = currentResponse ? [currentResponse, userMsg] : [userMsg]
         const chatMessages: ChatMessage[] = [
           {
             role: 'system',
-            content: 'You are Wingman, a helpful AI assistant integrated into a desktop app. Keep responses concise and helpful.'
+            content: 'You are Wingman, a helpful AI assistant with access to Google Drive documents. When provided with Drive context, use it to give more relevant and specific answers.'
           },
-          ...contextMessages.map(msg => ({
-            role: msg.role as 'user' | 'assistant',
-            content: msg.content
-          }))
+          {
+            role: 'user',
+            content: contextualContent
+          }
         ]
         
         let fullResponse = ''
         await openai.sendMessageStream(chatMessages, (chunk: string) => {
           fullResponse += chunk
           setStreamingText(fullResponse)
-          requestAnimationFrame(() => {
-            updateDimensions()
-          })
+          requestAnimationFrame(() => updateDimensions())
         })
         
         const assistantMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: fullResponse,
-          timestamp: new Date()
+          timestamp: new Date(),
+          driveContext
         }
 
         setCurrentResponse(assistantMsg)
@@ -269,9 +321,7 @@ function App() {
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: error instanceof Error 
-          ? `Error: ${error.message}. Please check your OpenAI API key and make sure you have access to GPT-4 Vision.` 
-          : 'Sorry, I encountered an error. Please check your API key and try again.',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         timestamp: new Date()
       }
       setCurrentResponse(errorMsg)
@@ -286,121 +336,303 @@ function App() {
     }
   }
 
-  // Handle screenshot capture and analysis
-  const handleScreenshotAndAnalyze = async (question?: string) => {
-    const screenshot = await captureScreen()
-    if (screenshot) {
-      const message = question || "What do you see on my screen?"
-      await sendMessage(message, screenshot)
-      if (!isChatMode) setIsChatMode(true)
+  // Handle input submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const query = inputValue.trim()
+    if (!query || isLoading || isStreaming) return
+
+    // If we have Drive connection, search Drive first
+    if (driveConnection.isConnected && currentMode === 'chat') {
+      await handleDriveSearch(query)
+    } else {
+      await sendMessage(query)
     }
   }
 
-  // Handle specific screen capture
-  const handleScreenCapture = async (sourceId: string, question?: string) => {
-    const screenshot = await captureScreenById(sourceId)
-    if (screenshot) {
-      const message = question || "What do you see on this screen?"
-      await sendMessage(message, screenshot)
-      if (!isChatMode) setIsChatMode(true)
-      setShowScreenOptions(false)
-    }
-  }
-
-  // Auto-scroll and resize when response or streaming changes
+  // Listen for Drive mode toggle
   useEffect(() => {
-    if (isChatMode && (currentResponse || isStreaming || streamingText)) {
-      requestAnimationFrame(() => {
-        scrollToBottom()
-        updateDimensions()
+    if (window.electronAPI?.onToggleDriveMode) {
+      window.electronAPI.onToggleDriveMode(() => {
+        setCurrentMode(prev => prev === 'drive' ? 'chat' : 'drive')
       })
     }
-  }, [currentResponse, isStreaming, streamingText, isChatMode, scrollToBottom, updateDimensions])
 
-  // Handle keyboard shortcuts
+    if (window.electronAPI?.onDriveSyncProgress) {
+      window.electronAPI.onDriveSyncProgress((progress) => {
+        setSyncProgress(progress)
+      })
+    }
+  }, [])
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+Enter to toggle chat mode
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault()
-        const newChatMode = !isChatMode
-        setIsChatMode(newChatMode)
-        if (newChatMode) {
-          setTimeout(() => {
-            inputRef.current?.focus()
-            scrollToBottom()
-          }, 200)
-        }
-      }
-      
-      // Cmd+Shift+S for quick screenshot
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'S') {
-        e.preventDefault()
-        handleScreenshotAndAnalyze()
-      }
-      
-      // Cmd+Shift+D for screen selection
+      // Cmd+Shift+D for Drive mode
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
         e.preventDefault()
-        setShowScreenOptions(!showScreenOptions)
-        if (!showScreenOptions) {
-          loadAvailableScreens()
+        setCurrentMode(prev => prev === 'drive' ? 'chat' : 'drive')
+      }
+      
+      // Cmd+Enter to toggle between modes
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        if (user && driveConnection.isConnected) {
+          setCurrentMode(prev => {
+            const modes: AppMode[] = ['chat', 'drive', 'cleanup', 'organize']
+            const currentIndex = modes.indexOf(prev)
+            return modes[(currentIndex + 1) % modes.length]
+          })
         }
       }
       
-      // Escape to exit chat mode or close screen options
+      // Escape to return to chat
       if (e.key === 'Escape') {
-        if (showScreenOptions) {
-          setShowScreenOptions(false)
-        } else if (isChatMode) {
-          setIsChatMode(false)
-          setInputValue('')
-          setCurrentResponse(null)
-          setStreamingText('')
-          setIsStreaming(false)
-          setLastScreenshot(null)
-        }
+        setCurrentMode('chat')
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isChatMode, showScreenOptions, scrollToBottom, handleScreenshotAndAnalyze, loadAvailableScreens])
+  }, [user, driveConnection])
 
-  // Handle input changes
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value)
-    if (!isChatMode && e.target.value.trim()) {
-      setIsChatMode(true)
-      setTimeout(scrollToBottom, 100)
+  // Render mode content
+  const renderModeContent = () => {
+    if (!user) {
+      return (
+        <div className="p-6 text-center">
+          <h3 className="text-white text-lg mb-4">Sign in to access Drive features</h3>
+          <button
+            onClick={handleSignIn}
+            disabled={isAuthenticating}
+            className="px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+          >
+            {isAuthenticating ? 'Signing in...' : 'Sign in with Google'}
+          </button>
+        </div>
+      )
+    }
+
+    switch (currentMode) {
+      case 'drive':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">Drive Management</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSync}
+                    disabled={isSyncing}
+                    className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/30 rounded text-sm text-white transition-colors"
+                  >
+                    {isSyncing ? 'Syncing...' : 'Sync'}
+                  </button>
+                </div>
+              </div>
+              
+              {syncProgress && (
+                <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
+                  <div className="text-white/80 text-sm mb-2">
+                    Processing: {syncProgress.currentFile}
+                  </div>
+                  <div className="w-full bg-blue-500/20 rounded-full h-2">
+                    <div 
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(syncProgress.processedFiles / syncProgress.totalFiles) * 100}%` }}
+                    />
+                  </div>
+                  <div className="text-white/60 text-xs mt-1">
+                    {syncProgress.processedFiles}/{syncProgress.totalFiles} files • {syncProgress.embeddingsCreated} indexed
+                  </div>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setCurrentMode('cleanup')}
+                  className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  🗑️ Cleanup
+                </button>
+                <button
+                  onClick={() => setCurrentMode('organize')}
+                  className="p-3 bg-green-500/10 hover:bg-green-500/20 border border-green-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  📁 Organize
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'cleanup':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">Drive Cleanup</h3>
+                <button
+                  onClick={loadCleanupCandidates}
+                  className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded text-sm text-white transition-colors"
+                >
+                  Scan
+                </button>
+              </div>
+              
+              {cleanupCandidates.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {cleanupCandidates.slice(0, 10).map((candidate) => (
+                    <div
+                      key={candidate.id}
+                      className="bg-red-500/10 border border-red-400/20 rounded-lg p-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white/90 text-sm font-medium truncate">
+                            {candidate.name}
+                          </div>
+                          <div className="text-red-300 text-xs mt-1">
+                            {candidate.reason} • {candidate.confidence} confidence
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteFiles([candidate.id])}
+                          className="ml-2 px-2 py-1 bg-red-500/30 hover:bg-red-500/50 rounded text-xs text-white transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {cleanupCandidates.length > 10 && (
+                    <div className="text-center">
+                      <button
+                        onClick={() => {
+                          const selectedIds = cleanupCandidates
+                            .filter(c => c.confidence === 'high')
+                            .map(c => c.id)
+                          handleDeleteFiles(selectedIds)
+                        }}
+                        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded text-sm text-white transition-colors"
+                      >
+                        Delete All High Confidence ({cleanupCandidates.filter(c => c.confidence === 'high').length})
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {cleanupCandidates.length === 0 && (
+                <div className="text-center text-white/60 py-8">
+                  No cleanup candidates found.<br />
+                  Click "Scan" to analyze your Drive.
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
+      case 'organize':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">File Organization</h3>
+                <button
+                  onClick={analyzeForOrganization}
+                  disabled={isAnalyzing}
+                  className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded text-sm text-white transition-colors"
+                >
+                  {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                </button>
+              </div>
+              
+              {organizationClusters.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {organizationClusters.map((cluster) => (
+                    <div
+                      key={cluster.id}
+                      className="bg-green-500/10 border border-green-400/20 rounded-lg p-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white/90 text-sm font-medium">
+                            {cluster.name}
+                          </div>
+                          <div className="text-green-300 text-xs mt-1">
+                            {cluster.files.length} files • {cluster.category}
+                          </div>
+                          <div className="text-white/60 text-xs mt-1">
+                            → {cluster.suggestedFolderName}
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const result = await window.electronAPI.drive.organizeFiles({
+                                clusters: [cluster]
+                              })
+                              if (result.success) {
+                                console.log('Organization completed for cluster:', cluster.name)
+                              }
+                            } catch (error) {
+                              console.error('Error organizing cluster:', error)
+                            }
+                          }}
+                          className="ml-2 px-2 py-1 bg-green-500/30 hover:bg-green-500/50 rounded text-xs text-white transition-colors"
+                        >
+                          Create
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="text-center">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const result = await window.electronAPI.drive.organizeFiles({
+                            clusters: organizationClusters
+                          })
+                          if (result.success) {
+                            console.log('Organization completed for all clusters')
+                            setOrganizationClusters([])
+                          }
+                        } catch (error) {
+                          console.error('Error organizing all clusters:', error)
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded text-sm text-white transition-colors"
+                    >
+                      Organize All ({organizationClusters.length} folders)
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {organizationClusters.length === 0 && !isAnalyzing && (
+                <div className="text-center text-white/60 py-8">
+                  No organization suggestions.<br />
+                  Click "Analyze" to get smart folder suggestions.
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
+      default: // chat mode
+        return null
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (inputValue.trim() && !isLoading && !isStreaming) {
-      sendMessage(inputValue.trim())
-    }
-  }
-
-  // Listen for global screenshot capture
-  useEffect(() => {
-    if (window.electronAPI?.onScreenshotCaptured) {
-      window.electronAPI.onScreenshotCaptured((screenshot: string) => {
-        setLastScreenshot(screenshot)
-        sendMessage("What do you see on my screen?", screenshot)
-        if (!isChatMode) setIsChatMode(true)
-      })
-    }
-  }, [isChatMode])
-
+  // Initialize app
   useEffect(() => {
     // Initialize OpenAI service
     const apiKey = import.meta.env.VITE_OPENAI_API_KEY
     if (apiKey) {
       initializeOpenAI(apiKey)
-    } else {
-      console.warn('OpenAI API key not found. Please add VITE_OPENAI_API_KEY to your .env file')
     }
 
     if (window.electronAPI) {
@@ -409,36 +641,16 @@ function App() {
         setIsInitialized(true)
         setTimeout(updateDimensions, 150)
       })
-      
-      window.electronAPI.onShortcutTestSuccess(() => {
-        setShortcutTestSuccess(true)
-        setTimeout(updateDimensions, 100)
-      })
     } else {
       setIsInitialized(true)
     }
 
-    loadAvailableScreens()
-
     const initialTimeout = setTimeout(updateDimensions, 200)
-    
-    const resizeObserver = new ResizeObserver(() => {
-      setTimeout(updateDimensions, 50)
-    })
-    
-    if (contentRef.current) {
-      resizeObserver.observe(contentRef.current)
-    }
+    return () => clearTimeout(initialTimeout)
+  }, [updateDimensions])
 
-    return () => {
-      clearTimeout(initialTimeout)
-      resizeObserver.disconnect()
-    }
-  }, [updateDimensions, loadAvailableScreens])
-
-  // SIMPLIFIED DRAG HANDLERS
+  // Drag handlers (simplified for brevity)
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Don't drag if clicking on interactive elements
     const target = e.target as HTMLElement
     if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || 
         target.closest('button') || target.closest('input')) {
@@ -447,50 +659,8 @@ function App() {
     
     e.preventDefault()
     setIsDragging(true)
-    setDragStart({
-      x: e.clientX,
-      y: e.clientY
-    })
+    setDragStart({ x: e.clientX, y: e.clientY })
   }
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (isDragging && window.electronAPI) {
-      e.preventDefault()
-      
-      const deltaX = e.clientX - dragStart.x
-      const deltaY = e.clientY - dragStart.y
-      
-      window.electronAPI.dragWindow({ deltaX, deltaY })
-      setDragStart({ x: e.clientX, y: e.clientY })
-    }
-  }, [isDragging, dragStart])
-
-  const handleMouseUp = useCallback((e: MouseEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }, [])
-
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove, { passive: false })
-      document.addEventListener('mouseup', handleMouseUp, { passive: false })
-      document.body.style.userSelect = 'none'
-      document.body.style.pointerEvents = 'none'
-      document.body.style.cursor = 'grabbing'
-    } else {
-      document.body.style.userSelect = ''
-      document.body.style.pointerEvents = ''
-      document.body.style.cursor = ''
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-      document.body.style.userSelect = ''
-      document.body.style.pointerEvents = ''
-      document.body.style.cursor = ''
-    }
-  }, [isDragging, handleMouseMove, handleMouseUp])
 
   return (
     <div 
@@ -501,220 +671,156 @@ function App() {
       style={{ 
         width: 'fit-content', 
         height: 'fit-content',
-        minWidth: '480px',
-        maxWidth: '680px',
+        minWidth: currentMode === 'chat' ? '480px' : '500px',
+        maxWidth: '700px',
         transformOrigin: 'center center'
       }}
     >
-      {/* ========== CHAT HEADER - ALWAYS VISIBLE ========== */}
+      {/* Header */}
       <div 
-        ref={headerRef}
         className={`px-4 py-3 bg-black/95 backdrop-blur-lg cursor-grab ${isDragging ? 'cursor-grabbing' : ''}`}
         onMouseDown={handleMouseDown}
-        style={{ 
-          WebkitAppRegion: 'drag',
-          position: 'sticky',
-          top: 0,
-          zIndex: 100
-        }}
+        style={{ WebkitAppRegion: 'drag' }}
       >
-        {/* Status indicator and action buttons */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className={`w-2.5 h-2.5 rounded-full ${
-                isCapturing ? 'bg-orange-400' : 
+                isSyncing ? 'bg-orange-400' : 
                 isStreaming ? 'bg-blue-400' : 
                 'bg-green-400'
               } animate-pulse`}></div>
             </div>
             
             <div>
-              <h1 className="text-white font-medium text-sm">Wingman</h1>
+              <h1 className="text-white font-medium text-sm">
+                Wingman {user && driveConnection.isConnected && `• ${currentMode}`}
+              </h1>
               <p className="text-white/50 text-xs">
-                {isCapturing ? 'Capturing...' : 
-                 isStreaming ? 'Thinking...' :
-                 'Ready'}
+                {user ? `${user.displayName} • ${driveConnection.isConnected ? 'Drive Connected' : 'Drive Disconnected'}` : 'Not signed in'}
               </p>
             </div>
           </div>
           
           <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
-            <button
-              onClick={() => handleScreenshotAndAnalyze(inputValue || undefined)}
-              disabled={isCapturing || isLoading}
-              className="p-2 bg-blue-500/20 hover:bg-blue-500/30 disabled:opacity-50 border border-blue-400/30 rounded-lg text-sm transition-colors"
-              title="Capture screen (⌘⇧S)"
-            >
-              📸
-            </button>
-            
-            <button
-              onClick={() => {
-                setShowScreenOptions(!showScreenOptions)
-                if (!showScreenOptions) loadAvailableScreens()
-              }}
-              className="p-2 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/30 rounded-lg text-sm transition-colors"
-              title="Select screen (⌘⇧D)"
-            >
-              🖥️
-            </button>
+            {user && (
+              <>
+                <button
+                  onClick={() => setCurrentMode('drive')}
+                  className={`p-2 border rounded-lg text-sm transition-colors ${
+                    currentMode === 'drive' 
+                      ? 'bg-blue-500/30 border-blue-400/50' 
+                      : 'bg-blue-500/10 border-blue-400/20 hover:bg-blue-500/20'
+                  }`}
+                  title="Drive mode (⌘⇧D)"
+                >
+                  💾
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="p-2 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded-lg text-sm transition-colors"
+                  title="Sign out"
+                >
+                  👤
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Chat Input - Part of Header */}
-        <div className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit(e))}
-            placeholder="Type a message..."
-            className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-20 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
-            disabled={isLoading || isStreaming}
-            autoFocus
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={!inputValue.trim() || isLoading || isStreaming}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
-          >
-            {isLoading ? '...' : 'Send'}
-          </button>
-        </div>
+        {/* Chat Input */}
+        {currentMode === 'chat' && (
+          <div className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit(e))}
+              placeholder={driveConnection.isConnected ? "Ask about your Drive..." : "Type a message..."}
+              className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-20 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
+              disabled={isLoading || isStreaming}
+              autoFocus
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={!inputValue.trim() || isLoading || isStreaming}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
+            >
+              {isLoading ? '...' : 'Send'}
+            </button>
+          </div>
+        )}
 
-        {/* Shortcuts hint */}
+        {/* Mode shortcuts */}
         <div className="mt-2 text-center">
-          <span className="text-white/30 text-xs">⌘⇧S Screenshot • ⌘⇧D Select • ⎋ Close</span>
+          <span className="text-white/30 text-xs">
+            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
+          </span>
         </div>
       </div>
 
-      {/* Screen Selection Dropdown */}
-      {showScreenOptions && (
-        <div className="p-4 border-b border-blue-500/10 bg-black/90" style={{ WebkitAppRegion: 'no-drag' }}>
-          <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
-            <h3 className="text-white/80 text-sm mb-3">Select Screen</h3>
-            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-              {availableScreens.map((screen) => (
-                <button
-                  key={screen.id}
-                  onClick={() => handleScreenCapture(screen.id)}
-                  className="bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/20 rounded-lg p-2 text-left transition-colors"
-                >
-                  <img 
-                    src={screen.thumbnail} 
-                    alt={screen.name}
-                    className="w-full h-16 object-cover rounded mb-1"
-                  />
-                  <p className="text-white/70 text-xs truncate">{screen.name}</p>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowScreenOptions(false)}
-              className="mt-2 w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/20 px-3 py-2 rounded-lg text-white/80 text-xs transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Mode Content */}
+      {currentMode !== 'chat' && renderModeContent()}
 
-      {/* Messages Area - Clean minimal response */}
-      {(streamingText || isStreaming || currentResponse) && (
-        <div 
-          ref={messagesContainerRef}
-          className="px-6 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          {/* Streaming response */}
+      {/* Chat Messages */}
+      {currentMode === 'chat' && (streamingText || isStreaming || currentResponse) && (
+        <div className="px-6 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar">
           {(streamingText || isStreaming) && (
-            <div className="group relative">
-              <button
-                onClick={() => streamingText && copyToClipboard(streamingText, 'streaming')}
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 hover:bg-white/10 rounded-md transition-all duration-200 z-10"
-                title="Copy response"
-              >
-                {copiedMessageId === 'streaming' ? (
-                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                  </svg>
-                )}
-              </button>
-              
-              <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4 pr-14 streaming-container">
-                <div className="text-sm leading-relaxed space-y-3 text-white/90 select-text max-w-none streaming-text">
-                  {streamingText ? (
-                    formatResponse(streamingText)
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <div className="flex gap-1">
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
-                      </div>
-                      <span className="text-blue-300 text-sm font-medium">Analyzing...</span>
+            <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4">
+              <div className="text-sm leading-relaxed space-y-3 text-white/90">
+                {streamingText || (
+                  <div className="flex items-center gap-3">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Final response */}
-          {currentResponse && !isStreaming && (
-            <div className="group relative">
-              <button
-                onClick={() => copyToClipboard(currentResponse.content, currentResponse.id)}
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 hover:bg-white/10 rounded-md transition-all duration-200 z-10"
-                title="Copy response"
-              >
-                {copiedMessageId === currentResponse.id ? (
-                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                  </svg>
+                    <span className="text-blue-300 text-sm font-medium">
+                      {driveConnection.isConnected ? 'Searching Drive & analyzing...' : 'Analyzing...'}
+                    </span>
+                  </div>
                 )}
-              </button>
-              
-              <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4 pr-14 final-response">
-                <div className="text-sm leading-relaxed space-y-3 text-white/90 select-text max-w-none">
-                  {formatResponse(currentResponse.content)}
-                </div>
               </div>
             </div>
           )}
           
-          <div ref={messagesEndRef} />
+          {currentResponse && !isStreaming && (
+            <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4">
+              <div className="text-sm leading-relaxed space-y-3 text-white/90">
+                {currentResponse.content}
+              </div>
+              
+              {/* Show Drive context if available */}
+              {currentResponse.driveContext && currentResponse.driveContext.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-blue-400/10">
+                  <div className="text-xs text-blue-300 mb-2">📄 Referenced Documents:</div>
+                  <div className="space-y-1">
+                    {currentResponse.driveContext.map((doc, idx) => (
+                      <div key={idx} className="text-xs text-white/60 truncate">
+                        • {doc.fileName}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Compact mode welcome content - Only shows when not in chat mode and no messages */}
-      {!currentResponse && !streamingText && !isStreaming && (
+      {/* Welcome content for chat mode */}
+      {currentMode === 'chat' && !currentResponse && !streamingText && !isStreaming && (
         <div className="p-5 bg-black/30">
-          {shortcutTestSuccess && (
-            <div className="mb-4">
-              <div className="bg-green-500/20 border border-green-400/30 rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
-                  <span className="text-green-300 text-sm">Test successful</span>
-                </div>
-              </div>
-            </div>
-          )}
-          
           <div className="text-center">
-            <h2 className="text-white text-lg mb-2">Ready to help</h2>
+            <h2 className="text-white text-lg mb-2">
+              {user ? `Welcome back, ${user.displayName?.split(' ')[0]}!` : 'Ready to help'}
+            </h2>
             <p className="text-white/50 text-sm mb-4">
-              Type above, press <kbd className="bg-white/10 px-2 py-1 rounded text-xs">⌘⇧S</kbd> to capture screen, or <kbd className="bg-white/10 px-2 py-1 rounded text-xs">⌘↵</kbd> to chat
+              {driveConnection.isConnected 
+                ? 'I can search your Drive and answer questions about your documents'
+                : 'Type above, press ⌘⇧S to capture screen, or sign in for Drive access'
+              }
             </p>
             
             {appVersion && (
@@ -723,7 +829,9 @@ function App() {
                   <span className="text-white/30">v{appVersion}</span>
                   <div className="flex items-center gap-2">
                     <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
-                    <span className="text-white/30">Vision Ready</span>
+                    <span className="text-white/30">
+                      {driveConnection.isConnected ? 'Drive + Vision Ready' : 'Vision Ready'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -736,73 +844,3 @@ function App() {
 }
 
 export default App
-
-// Simple, smooth animation styles
-const animationStyles = `
-/* Smooth container appearance */
-.streaming-container {
-  animation: slideIn 0.3s ease-out;
-}
-
-.final-response {
-  animation: fadeIn 0.4s ease-out;
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Smooth text content changes */
-.streaming-text {
-  transition: all 0.15s ease-out;
-}
-
-/* Better loading animation */
-@keyframes pulse-smooth {
-  0%, 100% {
-    opacity: 0.4;
-    transform: scale(0.9);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.1);
-  }
-}
-
-.animate-pulse {
-  animation: pulse-smooth 1.8s ease-in-out infinite;
-}
-
-/* Subtle hover effects */
-.group:hover .streaming-container,
-.group:hover .final-response {
-  transform: translateY(-1px);
-  transition: transform 0.2s ease-out;
-}
-`
-
-// Inject styles into document
-if (typeof document !== 'undefined') {
-  const styleElement = document.createElement('style')
-  styleElement.textContent = animationStyles
-  if (!document.head.querySelector('style[data-wingman-styles]')) {
-    styleElement.setAttribute('data-wingman-styles', 'true')
-    document.head.appendChild(styleElement)
-  }
-}
