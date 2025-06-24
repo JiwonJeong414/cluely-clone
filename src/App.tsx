@@ -40,6 +40,7 @@ function App() {
   const [isCapturing, setIsCapturing] = useState(false)
   const [showScreenOptions, setShowScreenOptions] = useState(false)
   const [lastScreenshot, setLastScreenshot] = useState<string | null>(null)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -72,6 +73,67 @@ function App() {
       })
     }
   }, [])
+
+  // Format response text with bold sections and lists
+  const formatResponse = (text: string) => {
+    // Split by double asterisks for bold sections
+    const parts = text.split(/(\*\*.*?\*\*)/g)
+    
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <span key={index} className="font-semibold text-blue-200">
+            {part.slice(2, -2)}
+          </span>
+        )
+      }
+      
+      // Handle numbered lists
+      if (part.includes('\n') && /^\d+\./.test(part.trim())) {
+        const lines = part.split('\n').filter(line => line.trim())
+        return (
+          <div key={index} className="space-y-2">
+            {lines.map((line, lineIndex) => {
+              if (/^\d+\./.test(line.trim())) {
+                return (
+                  <div key={lineIndex} className="flex gap-3">
+                    <span className="text-blue-300 font-medium text-sm mt-0.5 flex-shrink-0">
+                      {line.match(/^\d+/)?.[0]}.
+                    </span>
+                    <span className="text-white/90 leading-relaxed">
+                      {line.replace(/^\d+\.\s*/, '')}
+                    </span>
+                  </div>
+                )
+              }
+              return (
+                <p key={lineIndex} className="text-white/90 leading-relaxed">
+                  {line}
+                </p>
+              )
+            })}
+          </div>
+        )
+      }
+      
+      return (
+        <span key={index} className="text-white/90 leading-relaxed">
+          {part}
+        </span>
+      )
+    })
+  }
+
+  // Copy to clipboard functionality
+  const copyToClipboard = async (text: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedMessageId(messageId)
+      setTimeout(() => setCopiedMessageId(null), 2000)
+    } catch (err) {
+      console.error('Failed to copy text: ', err)
+    }
+  }
 
   // Load available screens
   const loadAvailableScreens = useCallback(async () => {
@@ -439,15 +501,15 @@ function App() {
       style={{ 
         width: 'fit-content', 
         height: 'fit-content',
-        minWidth: '360px',
-        maxWidth: '500px',
+        minWidth: '480px',
+        maxWidth: '680px',
         transformOrigin: 'center center'
       }}
     >
       {/* ========== CHAT HEADER - ALWAYS VISIBLE ========== */}
       <div 
         ref={headerRef}
-        className={`px-4 py-3 bg-black/95 backdrop-blur-lg cursor-grab ${isDragging ? 'cursor-grabbing' : ''} ${isChatMode ? 'border-b border-blue-500/10' : ''}`}
+        className={`px-4 py-3 bg-black/95 backdrop-blur-lg cursor-grab ${isDragging ? 'cursor-grabbing' : ''}`}
         onMouseDown={handleMouseDown}
         style={{ 
           WebkitAppRegion: 'drag',
@@ -462,7 +524,7 @@ function App() {
             <div className="relative">
               <div className={`w-2.5 h-2.5 rounded-full ${
                 isCapturing ? 'bg-orange-400' : 
-                isChatMode ? 'bg-blue-400' : 
+                isStreaming ? 'bg-blue-400' : 
                 'bg-green-400'
               } animate-pulse`}></div>
             </div>
@@ -472,7 +534,6 @@ function App() {
               <p className="text-white/50 text-xs">
                 {isCapturing ? 'Capturing...' : 
                  isStreaming ? 'Thinking...' :
-                 isChatMode ? 'AI Vision' : 
                  'Ready'}
               </p>
             </div>
@@ -502,29 +563,30 @@ function App() {
         </div>
 
         {/* Chat Input - Part of Header */}
-        <form onSubmit={handleSubmit} className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
+        <div className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
           <input
             ref={inputRef}
             type="text"
             value={inputValue}
             onChange={handleInputChange}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit(e))}
             placeholder="Type a message..."
-            className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-3 py-2 pr-16 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
+            className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-20 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
             disabled={isLoading || isStreaming}
             autoFocus
           />
           <button
-            type="submit"
+            onClick={handleSubmit}
             disabled={!inputValue.trim() || isLoading || isStreaming}
-            className="absolute right-2 top-1/2 transform -translate-y-1/2 px-3 py-1 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
           >
             {isLoading ? '...' : 'Send'}
           </button>
-        </form>
+        </div>
 
         {/* Shortcuts hint */}
         <div className="mt-2 text-center">
-          <span className="text-white/30 text-xs">⌘⇧S Screenshot • ⌘⇧D Select • ⎋ {isChatMode ? 'Close' : 'Ready'}</span>
+          <span className="text-white/30 text-xs">⌘⇧S Screenshot • ⌘⇧D Select • ⎋ Close</span>
         </div>
       </div>
 
@@ -559,48 +621,84 @@ function App() {
         </div>
       )}
 
-      {/* Messages Area - Only shows when there are messages */}
-      {isChatMode && (currentResponse || streamingText || isStreaming) && (
+      {/* Messages Area - Clean minimal response */}
+      {(streamingText || isStreaming || currentResponse) && (
         <div 
           ref={messagesContainerRef}
-          className="px-4 py-3 max-h-80 overflow-y-auto custom-scrollbar bg-black/50"
+          className="px-6 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
-          <div className="space-y-3">
-            {/* Streaming response */}
-            {(streamingText || isStreaming) && (
-              <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3">
-                <div className="text-white text-sm leading-relaxed whitespace-pre-wrap selectable">{streamingText}</div>
-                {isStreaming && !streamingText && (
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                    </div>
-                    <span className="text-blue-300 text-xs">Analyzing...</span>
-                  </div>
+          {/* Streaming response */}
+          {(streamingText || isStreaming) && (
+            <div className="group relative">
+              <button
+                onClick={() => streamingText && copyToClipboard(streamingText, 'streaming')}
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 hover:bg-white/10 rounded-md transition-all duration-200 z-10"
+                title="Copy response"
+              >
+                {copiedMessageId === 'streaming' ? (
+                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                  </svg>
                 )}
-              </div>
-            )}
-            
-            {/* Final response */}
-            {currentResponse && !isStreaming && (
-              <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3">
-                <div className="text-white text-sm leading-relaxed whitespace-pre-wrap selectable">{currentResponse.content}</div>
-                <div className="text-blue-300 text-xs mt-2 pt-2 border-t border-blue-400/20">
-                  {currentResponse.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </button>
+              
+              <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4 pr-14 streaming-container">
+                <div className="text-sm leading-relaxed space-y-3 text-white/90 select-text max-w-none streaming-text">
+                  {streamingText ? (
+                    formatResponse(streamingText)
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div className="flex gap-1">
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
+                      </div>
+                      <span className="text-blue-300 text-sm font-medium">Analyzing...</span>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
-            
-            <div ref={messagesEndRef} />
-          </div>
+            </div>
+          )}
+          
+          {/* Final response */}
+          {currentResponse && !isStreaming && (
+            <div className="group relative">
+              <button
+                onClick={() => copyToClipboard(currentResponse.content, currentResponse.id)}
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 hover:bg-white/10 rounded-md transition-all duration-200 z-10"
+                title="Copy response"
+              >
+                {copiedMessageId === currentResponse.id ? (
+                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                  </svg>
+                )}
+              </button>
+              
+              <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4 pr-14 final-response">
+                <div className="text-sm leading-relaxed space-y-3 text-white/90 select-text max-w-none">
+                  {formatResponse(currentResponse.content)}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div ref={messagesEndRef} />
         </div>
       )}
 
       {/* Compact mode welcome content - Only shows when not in chat mode and no messages */}
-      {!isChatMode && !currentResponse && !streamingText && !isStreaming && (
+      {!currentResponse && !streamingText && !isStreaming && (
         <div className="p-5 bg-black/30">
           {shortcutTestSuccess && (
             <div className="mb-4">
@@ -638,3 +736,73 @@ function App() {
 }
 
 export default App
+
+// Simple, smooth animation styles
+const animationStyles = `
+/* Smooth container appearance */
+.streaming-container {
+  animation: slideIn 0.3s ease-out;
+}
+
+.final-response {
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Smooth text content changes */
+.streaming-text {
+  transition: all 0.15s ease-out;
+}
+
+/* Better loading animation */
+@keyframes pulse-smooth {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.animate-pulse {
+  animation: pulse-smooth 1.8s ease-in-out infinite;
+}
+
+/* Subtle hover effects */
+.group:hover .streaming-container,
+.group:hover .final-response {
+  transform: translateY(-1px);
+  transition: transform 0.2s ease-out;
+}
+`
+
+// Inject styles into document
+if (typeof document !== 'undefined') {
+  const styleElement = document.createElement('style')
+  styleElement.textContent = animationStyles
+  if (!document.head.querySelector('style[data-wingman-styles]')) {
+    styleElement.setAttribute('data-wingman-styles', 'true')
+    document.head.appendChild(styleElement)
+  }
+}
