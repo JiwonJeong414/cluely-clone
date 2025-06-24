@@ -27,7 +27,7 @@ function createWindow() {
     alwaysOnTop: true,
     frame: false, // Remove window frame
     transparent: true,
-    resizable: false,
+    resizable: true, // Allow resizing for dynamic content
     fullscreenable: false,
     skipTaskbar: true, // Don't show in taskbar
     // macOS specific
@@ -204,6 +204,24 @@ ipcMain.handle('hide-window', () => {
 
 ipcMain.handle('show-window', () => {
   showWindow()
+})
+
+ipcMain.handle('update-content-dimensions', async (event, { width, height }) => {
+  console.log('🔄 IPC: update-content-dimensions called with:', { width, height })
+  if (mainWindow && width && height) {
+    const currentBounds = mainWindow.getBounds()
+    console.log('📍 Current bounds:', currentBounds)
+    const newBounds = {
+      x: currentBounds.x,
+      y: currentBounds.y,
+      width: Math.max(width + 32, 300), // Add padding and minimum width
+      height: Math.max(height + 32, 200) // Add padding and minimum height
+    }
+    console.log('🎯 Setting new bounds:', newBounds)
+    mainWindow.setBounds(newBounds)
+  } else {
+    console.log('❌ Cannot update dimensions:', { mainWindow: !!mainWindow, width, height })
+  }
 })
 
 // Handle shortcut test success

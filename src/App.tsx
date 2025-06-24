@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 
 function App() {
   const [appVersion, setAppVersion] = useState<string>('')
   const [shortcutTestSuccess, setShortcutTestSuccess] = useState<boolean>(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -16,6 +18,28 @@ function App() {
         setShortcutTestSuccess(true)
       })
     }
+
+    const updateDimensions = () => {
+      if (contentRef.current) {
+        const height = contentRef.current.scrollHeight
+        const width = contentRef.current.scrollWidth
+        console.log('📏 Updating dimensions:', { width, height })
+        window.electronAPI?.updateContentDimensions?.({ width, height })
+      }
+    }
+
+    // Update dimensions on mount and when content changes
+    updateDimensions()
+    
+    // Set up resize observer
+    const resizeObserver = new ResizeObserver(updateDimensions)
+    if (contentRef.current) {
+      resizeObserver.observe(contentRef.current)
+    }
+
+    return () => {
+      resizeObserver.disconnect()
+    }
   }, [])
 
   const handleHide = () => {
@@ -23,8 +47,10 @@ function App() {
   }
 
   return (
-    <div className="w-full h-full bg-red-500">
-      {/* Subtle background pattern */}
+    <div 
+      ref={contentRef}
+      className="w-full h-full bg-black/90 backdrop-blur-xl rounded-xl shadow-2xl border border-gray-600/30 relative overflow-hidden font-sans"
+    >      {/* Subtle background pattern */}
       <div className="absolute inset-0 opacity-5">
         <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-purple-500/20 to-pink-500/20"></div>
       </div>
