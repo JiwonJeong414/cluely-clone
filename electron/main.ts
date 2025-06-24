@@ -11,9 +11,9 @@ function createWindow() {
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
   mainWindow = new BrowserWindow({
-    width: 280,
-    height: 120,
-    x: Math.floor(screenWidth / 2 - 140),
+    width: 400, // Increased from 280
+    height: 140, // Slightly increased for better proportions
+    x: Math.floor(screenWidth / 2 - 200), // Adjusted for new width
     y: 80,
     webPreferences: {
       nodeIntegration: false,
@@ -26,14 +26,18 @@ function createWindow() {
     alwaysOnTop: true,
     frame: false,
     transparent: true,
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: -100, y: -100 }, 
     resizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    titleBarStyle: 'hidden',
-    minWidth: 200,
+    minWidth: 300, 
     minHeight: 80,
-    maxWidth: 400,
+    maxWidth: 600, 
     maxHeight: 300,
+    movable: true,
+    useContentSize: false,
+    thickFrame: false,
   })
 
   if (isDev) {
@@ -188,7 +192,7 @@ ipcMain.handle('update-content-dimensions', async (event, { width, height }) => 
   try {
     const currentBounds = mainWindow.getBounds()
     const padding = 20
-    const newWidth = Math.max(Math.min(width + padding, 400), 200)
+    const newWidth = Math.max(Math.min(width + padding, 600), 300) // Updated limits
     const newHeight = Math.max(Math.min(height + padding, 300), 80)
     
     mainWindow.setSize(newWidth, newHeight, true)
@@ -198,12 +202,22 @@ ipcMain.handle('update-content-dimensions', async (event, { width, height }) => 
   }
 })
 
+// Improved drag handling with smoother movement
 ipcMain.handle('drag-window', async (event, { deltaX, deltaY }) => {
   if (mainWindow) {
     const currentBounds = mainWindow.getBounds()
     const newX = currentBounds.x + deltaX
     const newY = currentBounds.y + deltaY
-    mainWindow.setPosition(newX, newY, true)
+    
+    // Use setPosition with animate=false for smoother movement
+    mainWindow.setPosition(newX, newY, false)
+  }
+})
+
+// Alternative drag method for even smoother movement
+ipcMain.handle('set-window-position', async (event, { x, y }) => {
+  if (mainWindow) {
+    mainWindow.setPosition(Math.round(x), Math.round(y), false)
   }
 })
 
