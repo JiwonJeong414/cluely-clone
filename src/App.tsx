@@ -21,7 +21,9 @@ function App() {
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [isChatMode, setIsChatMode] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([])
+  const [currentResponse, setCurrentResponse] = useState<Message | null>(null)
+  const [streamingText, setStreamingText] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
@@ -32,13 +34,18 @@ function App() {
 
   const updateDimensions = useCallback(() => {
     if (contentRef.current && window.electronAPI?.updateContentDimensions) {
-      const rect = contentRef.current.getBoundingClientRect()
-      const width = Math.ceil(rect.width)
-      const height = Math.ceil(rect.height)
-      
-      if (width > 0 && height > 0) {
-        window.electronAPI.updateContentDimensions({ width, height })
-      }
+      // Use a more reliable method to get dimensions
+      requestAnimationFrame(() => {
+        if (contentRef.current) {
+          const rect = contentRef.current.getBoundingClientRect()
+          const width = Math.ceil(rect.width)
+          const height = Math.ceil(rect.height)
+          
+          if (width > 0 && height > 0) {
+            window.electronAPI.updateContentDimensions({ width, height })
+          }
+        }
+      })
     }
   }, [])
 
@@ -54,17 +61,15 @@ function App() {
     }
   }, [])
 
-  // Auto-scroll when messages change or loading state changes
+  // Auto-scroll and resize when response or streaming changes
   useEffect(() => {
-    if (isChatMode) {
-      // Use multiple animation frames to ensure proper scrolling
+    if (isChatMode && (currentResponse || isStreaming || streamingText)) {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom()
-        })
+        scrollToBottom()
+        updateDimensions()
       })
     }
-  }, [messages, isLoading, isChatMode, scrollToBottom])
+  }, [currentResponse, isStreaming, streamingText, isChatMode, scrollToBottom, updateDimensions])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -87,6 +92,9 @@ function App() {
       if (e.key === 'Escape' && isChatMode) {
         setIsChatMode(false)
         setInputValue('')
+        setCurrentResponse(null)
+        setStreamingText('')
+        setIsStreaming(false)
       }
     }
 
@@ -105,7 +113,7 @@ function App() {
     }
   }
 
-  // Send message to OpenAI
+  // Send message to OpenAI with streaming
   const sendMessage = async (userMessage: string) => {
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -114,38 +122,53 @@ function App() {
       timestamp: new Date()
     }
 
-    setMessages(prev => [...prev, userMsg])
+    // Clear previous response and start streaming
+    setCurrentResponse(null)
+    setStreamingText('')
     setIsLoading(true)
+    setIsStreaming(true)
     setInputValue('')
 
-    // Scroll after adding user message
-    setTimeout(scrollToBottom, 50)
-
     try {
-      // Convert messages to OpenAI format (including the new user message)
-      const allMessages = [...messages, userMsg] // Include the new message in context
+      // For context, we'll use the current response if it exists
+      const contextMessages: Message[] = currentResponse ? [currentResponse, userMsg] : [userMsg]
       const chatMessages: ChatMessage[] = [
         {
           role: 'system',
           content: 'You are Wingman, a helpful AI assistant integrated into a desktop app. Keep responses concise and helpful.'
         },
-        ...allMessages.map(msg => ({
+        ...contextMessages.map(msg => ({
           role: msg.role as 'user' | 'assistant',
           content: msg.content
         }))
       ]
 
       const openai = getOpenAI()
-      const response = await openai.sendMessage(chatMessages)
       
+      // Use streaming for live response
+      let fullResponse = ''
+      await openai.sendMessageStream(chatMessages, (chunk: string) => {
+        fullResponse += chunk
+        setStreamingText(fullResponse)
+        
+        // Update dimensions more aggressively during streaming
+        requestAnimationFrame(() => {
+          updateDimensions()
+        })
+      })
+      
+      // Create final message
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response,
+        content: fullResponse,
         timestamp: new Date()
       }
 
-      setMessages(prev => [...prev, assistantMsg])
+      setCurrentResponse(assistantMsg)
+      setStreamingText('')
+      setIsStreaming(false)
+      
     } catch (error) {
       console.error('Error sending message:', error)
       const errorMsg: Message = {
@@ -156,20 +179,22 @@ function App() {
           : 'Sorry, I encountered an error. Please check your API key and try again.',
         timestamp: new Date()
       }
-      setMessages(prev => [...prev, errorMsg])
+      setCurrentResponse(errorMsg)
+      setStreamingText('')
+      setIsStreaming(false)
     } finally {
       setIsLoading(false)
-      // Re-focus input after sending and scroll to bottom
+      // Re-focus input after response is complete
       setTimeout(() => {
         inputRef.current?.focus()
-        scrollToBottom()
-      }, 100)
+        updateDimensions()
+      }, 200)
     }
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (inputValue.trim() && !isLoading) {
+    if (inputValue.trim() && !isLoading && !isStreaming) {
       sendMessage(inputValue.trim())
     }
   }
@@ -282,9 +307,10 @@ function App() {
       } ${!isInitialized ? 'opacity-0' : 'opacity-100'}`}
       style={{ 
         width: 'fit-content', 
-        height: 'fit-content', 
-        minWidth: isChatMode ? '600px' : '360px',
-        maxHeight: isChatMode ? '800px' : 'auto',
+        height: 'fit-content',
+        minWidth: isChatMode ? '550px' : '360px',
+        maxWidth: '800px',
+        maxHeight: 'none', // Remove height restriction for proper resizing
         transformOrigin: 'center center'
       }}
     >
@@ -336,26 +362,32 @@ function App() {
               scrollBehavior: 'smooth'
             }}
           >
-            {messages.filter(m => m.role === 'assistant').length === 0 ? (
+            {(!currentResponse && !streamingText && !isStreaming) ? (
               <div className="py-8 text-center">
                 <div className="text-white/40 text-sm mb-2">🤖 AI Assistant Ready</div>
                 <div className="text-white/30 text-xs">Type your message below to start chatting</div>
               </div>
             ) : (
               <div className="space-y-4 py-4">
-                {messages
-                  .filter(message => message.role === 'assistant') // Only show AI responses
-                  .map((message) => (
-                  <div key={message.id} className="flex justify-start">
+                {(streamingText || isStreaming) && (
+                  <div className="flex justify-start">
                     <div className="max-w-[90%] rounded-xl px-4 py-3 bg-gray-500/20 border border-gray-400/30 text-gray-100">
-                      <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                      <div className="text-sm whitespace-pre-wrap">{streamingText}</div>
+                      <div className="text-xs opacity-50 mt-1">AI is typing...</div>
+                    </div>
+                  </div>
+                )}
+                {currentResponse && !isStreaming && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[90%] rounded-xl px-4 py-3 bg-gray-500/20 border border-gray-400/30 text-gray-100">
+                      <div className="text-sm whitespace-pre-wrap">{currentResponse.content}</div>
                       <div className="text-xs opacity-50 mt-1">
-                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {currentResponse.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>
                   </div>
-                ))}
-                {isLoading && (
+                )}
+                {isLoading && !isStreaming && (
                   <div className="flex justify-start">
                     <div className="bg-gray-500/20 border border-gray-400/30 rounded-xl px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -386,12 +418,12 @@ function App() {
                 placeholder="Type your message..."
                 className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all"
                 rows={3}
-                disabled={isLoading}
+                disabled={isLoading || isStreaming}
                 style={{ WebkitAppRegion: 'no-drag' }}
               />
               <button
                 type="submit"
-                disabled={!inputValue.trim() || isLoading}
+                disabled={!inputValue.trim() || isLoading || isStreaming}
                 className="absolute bottom-2 right-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 disabled:opacity-50 text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
                 style={{ WebkitAppRegion: 'no-drag' }}
               >
