@@ -42,12 +42,15 @@ function App() {
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
   }
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    // Small delay to ensure DOM is updated
+    setTimeout(scrollToBottom, 100)
+  }, [messages, isLoading])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -87,20 +90,17 @@ function App() {
     setInputValue('')
 
     try {
-      // Convert messages to OpenAI format
+      // Convert messages to OpenAI format (including the new user message)
+      const allMessages = [...messages, userMsg] // Include the new message in context
       const chatMessages: ChatMessage[] = [
         {
           role: 'system',
           content: 'You are Wingman, a helpful AI assistant integrated into a desktop app. Keep responses concise and helpful.'
         },
-        ...messages.map(msg => ({
+        ...allMessages.map(msg => ({
           role: msg.role as 'user' | 'assistant',
           content: msg.content
-        })),
-        {
-          role: 'user',
-          content: userMessage
-        }
+        }))
       ]
 
       const openai = getOpenAI()
@@ -134,6 +134,10 @@ function App() {
     e.preventDefault()
     if (inputValue.trim() && !isLoading) {
       sendMessage(inputValue.trim())
+      // Re-focus input after sending
+      setTimeout(() => {
+        inputRef.current?.focus()
+      }, 100)
     }
   }
 
@@ -244,7 +248,7 @@ function App() {
         width: 'fit-content', 
         height: 'fit-content', 
         minWidth: isChatMode ? '500px' : '360px',
-        maxHeight: isChatMode ? '600px' : 'auto'
+        maxHeight: isChatMode ? '700px' : 'auto' // Increased max height
       }}
     >
       {/* Subtle gradient overlay */}
@@ -285,77 +289,87 @@ function App() {
 
       {/* Chat Messages Area */}
       {isChatMode && (
-        <div className="px-6 max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-white/20">
-          {messages.length === 0 ? (
-            <div className="py-8 text-center">
-              <div className="text-white/40 text-sm mb-2">🤖 AI Assistant Ready</div>
-              <div className="text-white/30 text-xs">Type your message below to start chatting</div>
-            </div>
-          ) : (
-            <div className="space-y-4 py-4">
-              {messages.map((message) => (
-                <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-xl px-4 py-3 ${
-                    message.role === 'user' 
-                      ? 'bg-blue-500/20 border border-blue-400/30 text-blue-100' 
-                      : 'bg-gray-500/20 border border-gray-400/30 text-gray-100'
-                  }`}>
-                    <div className="text-sm whitespace-pre-wrap">{message.content}</div>
-                    <div className="text-xs opacity-50 mt-1">
-                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-500/20 border border-gray-400/30 rounded-xl px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-1">
-                        <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                        <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+        <>
+          {/* Messages Container with custom scrolling */}
+          <div 
+            className="px-6 overflow-y-auto custom-scrollbar flex-1" 
+            style={{ 
+              scrollBehavior: 'smooth',
+              maxHeight: '320px'
+            }}
+          >
+            {messages.length === 0 ? (
+              <div className="py-8 text-center">
+                <div className="text-white/40 text-sm mb-2">🤖 AI Assistant Ready</div>
+                <div className="text-white/30 text-xs">Type your message below to start chatting</div>
+              </div>
+            ) : (
+              <div className="space-y-4 py-4">
+                {messages.map((message) => (
+                  <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] rounded-xl px-4 py-3 ${
+                      message.role === 'user' 
+                        ? 'bg-blue-500/20 border border-blue-400/30 text-blue-100' 
+                        : 'bg-gray-500/20 border border-gray-400/30 text-gray-100'
+                    }`}>
+                      <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                      <div className="text-xs opacity-50 mt-1">
+                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
-                      <span className="text-white/40 text-xs">AI is thinking...</span>
                     </div>
                   </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
+                ))}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-gray-500/20 border border-gray-400/30 rounded-xl px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex gap-1">
+                          <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        </div>
+                        <span className="text-white/40 text-xs">AI is thinking...</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+
+          {/* Chat Input - Always visible in chat mode */}
+          <div className="px-6 pb-4 pt-2 border-t border-white/10 mt-auto">
+            <form onSubmit={handleSubmit} className="relative">
+              <textarea
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all"
+                rows={3}
+                disabled={isLoading}
+                style={{ WebkitAppRegion: 'no-drag' }}
+              />
+              <button
+                type="submit"
+                disabled={!inputValue.trim() || isLoading}
+                className="absolute bottom-2 right-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 disabled:opacity-50 text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+                style={{ WebkitAppRegion: 'no-drag' }}
+              >
+                Send
+              </button>
+            </form>
+            <div className="mt-2 text-center">
+              <span className="text-white/30 text-xs">Press Escape to close • Cmd+Enter to toggle</span>
             </div>
-          )}
-        </div>
+          </div>
+        </>
       )}
 
       {/* Chat Input */}
-      {isChatMode && (
-        <div className="px-6 pb-4">
-          <form onSubmit={handleSubmit} className="relative">
-            <textarea
-              ref={inputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleInputKeyDown}
-              placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
-              className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all"
-              rows={3}
-              disabled={isLoading}
-              style={{ WebkitAppRegion: 'no-drag' }}
-            />
-            <button
-              type="submit"
-              disabled={!inputValue.trim() || isLoading}
-              className="absolute bottom-2 right-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 disabled:opacity-50 text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-              style={{ WebkitAppRegion: 'no-drag' }}
-            >
-              Send
-            </button>
-          </form>
-          <div className="mt-2 text-center">
-            <span className="text-white/30 text-xs">Press Escape to close • Cmd+Enter to toggle</span>
-          </div>
-        </div>
-      )}
+      {/* Removed - now included in the chat mode section above */}
 
       {/* Minimal content when not in chat mode */}
       {!isChatMode && shortcutTestSuccess && (
