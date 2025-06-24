@@ -24,9 +24,11 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   const updateDimensions = useCallback(() => {
     if (contentRef.current && window.electronAPI?.updateContentDimensions) {
@@ -40,17 +42,29 @@ function App() {
     }
   }, [])
 
-  // Auto-scroll to bottom when new messages arrive
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  // Improved scroll to bottom function
+  const scrollToBottom = useCallback(() => {
+    if (messagesContainerRef.current) {
+      // Use smooth scrolling with a slight delay to ensure DOM is updated
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+        }
+      })
     }
-  }
+  }, [])
 
+  // Auto-scroll when messages change or loading state changes
   useEffect(() => {
-    // Small delay to ensure DOM is updated
-    setTimeout(scrollToBottom, 100)
-  }, [messages, isLoading])
+    if (isChatMode) {
+      // Use multiple animation frames to ensure proper scrolling
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToBottom()
+        })
+      })
+    }
+  }, [messages, isLoading, isChatMode, scrollToBottom])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -58,10 +72,14 @@ function App() {
       // Cmd+Enter to toggle chat mode
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
-        setIsChatMode(!isChatMode)
-        if (!isChatMode) {
-          // Focus input when entering chat mode
-          setTimeout(() => inputRef.current?.focus(), 100)
+        const newChatMode = !isChatMode
+        setIsChatMode(newChatMode)
+        if (newChatMode) {
+          // Focus input when entering chat mode and scroll to bottom
+          setTimeout(() => {
+            inputRef.current?.focus()
+            scrollToBottom()
+          }, 200) // Increased delay for better UX
         }
       }
       
@@ -74,7 +92,18 @@ function App() {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isChatMode])
+  }, [isChatMode, scrollToBottom])
+
+  // Handle input changes to ensure chat mode stays visible when typing
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    setInputValue(e.target.value)
+    // If user starts typing and not in chat mode, enter chat mode
+    if (!isChatMode && e.target.value.trim()) {
+      setIsChatMode(true)
+      // Scroll to bottom when entering chat mode
+      setTimeout(scrollToBottom, 100)
+    }
+  }
 
   // Send message to OpenAI
   const sendMessage = async (userMessage: string) => {
@@ -88,6 +117,9 @@ function App() {
     setMessages(prev => [...prev, userMsg])
     setIsLoading(true)
     setInputValue('')
+
+    // Scroll after adding user message
+    setTimeout(scrollToBottom, 50)
 
     try {
       // Convert messages to OpenAI format (including the new user message)
@@ -127,6 +159,11 @@ function App() {
       setMessages(prev => [...prev, errorMsg])
     } finally {
       setIsLoading(false)
+      // Re-focus input after sending and scroll to bottom
+      setTimeout(() => {
+        inputRef.current?.focus()
+        scrollToBottom()
+      }, 100)
     }
   }
 
@@ -134,10 +171,6 @@ function App() {
     e.preventDefault()
     if (inputValue.trim() && !isLoading) {
       sendMessage(inputValue.trim())
-      // Re-focus input after sending
-      setTimeout(() => {
-        inputRef.current?.focus()
-      }, 100)
     }
   }
 
@@ -160,6 +193,7 @@ function App() {
     if (window.electronAPI) {
       window.electronAPI.getAppVersion().then(version => {
         setAppVersion(version)
+        setIsInitialized(true)
         setTimeout(updateDimensions, 150)
       })
       
@@ -167,6 +201,8 @@ function App() {
         setShortcutTestSuccess(true)
         setTimeout(updateDimensions, 100)
       })
+    } else {
+      setIsInitialized(true)
     }
 
     const initialTimeout = setTimeout(updateDimensions, 200)
@@ -243,12 +279,13 @@ function App() {
       ref={contentRef}
       className={`bg-black/80 backdrop-blur-md rounded-2xl border border-white/10 relative overflow-hidden font-sans transition-all duration-300 ${
         isDragging ? 'scale-105 shadow-2xl' : 'shadow-lg'
-      }`}
+      } ${!isInitialized ? 'opacity-0' : 'opacity-100'}`}
       style={{ 
         width: 'fit-content', 
         height: 'fit-content', 
-        minWidth: isChatMode ? '500px' : '360px',
-        maxHeight: isChatMode ? '700px' : 'auto' // Increased max height
+        minWidth: isChatMode ? '600px' : '360px',
+        maxHeight: isChatMode ? '800px' : 'auto',
+        transformOrigin: 'center center'
       }}
     >
       {/* Subtle gradient overlay */}
@@ -290,28 +327,27 @@ function App() {
       {/* Chat Messages Area */}
       {isChatMode && (
         <>
-          {/* Messages Container with custom scrolling */}
+          {/* Messages Container with improved scrolling */}
           <div 
-            className="px-6 overflow-y-auto custom-scrollbar flex-1" 
+            ref={messagesContainerRef}
+            className="px-6 overflow-y-auto custom-scrollbar flex-1 scroll-smooth" 
             style={{ 
-              scrollBehavior: 'smooth',
-              maxHeight: '320px'
+              maxHeight: '450px',
+              scrollBehavior: 'smooth'
             }}
           >
-            {messages.length === 0 ? (
+            {messages.filter(m => m.role === 'assistant').length === 0 ? (
               <div className="py-8 text-center">
                 <div className="text-white/40 text-sm mb-2">🤖 AI Assistant Ready</div>
                 <div className="text-white/30 text-xs">Type your message below to start chatting</div>
               </div>
             ) : (
               <div className="space-y-4 py-4">
-                {messages.map((message) => (
-                  <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] rounded-xl px-4 py-3 ${
-                      message.role === 'user' 
-                        ? 'bg-blue-500/20 border border-blue-400/30 text-blue-100' 
-                        : 'bg-gray-500/20 border border-gray-400/30 text-gray-100'
-                    }`}>
+                {messages
+                  .filter(message => message.role === 'assistant') // Only show AI responses
+                  .map((message) => (
+                  <div key={message.id} className="flex justify-start">
+                    <div className="max-w-[90%] rounded-xl px-4 py-3 bg-gray-500/20 border border-gray-400/30 text-gray-100">
                       <div className="text-sm whitespace-pre-wrap">{message.content}</div>
                       <div className="text-xs opacity-50 mt-1">
                         {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -333,7 +369,8 @@ function App() {
                     </div>
                   </div>
                 )}
-                <div ref={messagesEndRef} />
+                {/* Invisible element to scroll to */}
+                <div ref={messagesEndRef} style={{ height: '1px' }} />
               </div>
             )}
           </div>
@@ -344,9 +381,9 @@ function App() {
               <textarea
                 ref={inputRef}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={handleInputChange}
                 onKeyDown={handleInputKeyDown}
-                placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                placeholder="Type your message..."
                 className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all"
                 rows={3}
                 disabled={isLoading}
@@ -367,9 +404,6 @@ function App() {
           </div>
         </>
       )}
-
-      {/* Chat Input */}
-      {/* Removed - now included in the chat mode section above */}
 
       {/* Minimal content when not in chat mode */}
       {!isChatMode && shortcutTestSuccess && (
@@ -400,9 +434,29 @@ function App() {
       {!isChatMode && (
         <div className="px-6 pb-4">
           <div className="text-center">
-            <div className="text-white/20 text-xs">Press Cmd+Enter to start chatting</div>
+            <div className="text-white/20 text-xs">Press Cmd+Enter to start chatting or just start typing</div>
           </div>
         </div>
+      )}
+
+      {/* Hidden input to capture typing when not in chat mode */}
+      {!isChatMode && isInitialized && (
+        <input
+          type="text"
+          value={inputValue}
+          onChange={handleInputChange}
+          className="sr-only"
+          style={{ 
+            position: 'absolute',
+            left: '-9999px',
+            top: '-9999px',
+            width: '1px',
+            height: '1px',
+            opacity: 0,
+            pointerEvents: 'none'
+          }}
+          autoFocus
+        />
       )}
     </div>
   )

@@ -14,11 +14,18 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: transparent;
     overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   
   #root {
     width: 100vw;
     height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
   }
   
   /* Custom keyboard key styling */
@@ -27,10 +34,11 @@
     font-size: inherit;
   }
 
-  /* Custom Scrollbar Styles */
+  /* Improved Custom Scrollbar Styles */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+    scroll-behavior: smooth;
   }
 
   .custom-scrollbar::-webkit-scrollbar {
@@ -43,20 +51,135 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.3);
     border-radius: 3px;
-    transition: background 0.2s ease;
+    transition: all 0.2s ease;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:active {
+    background: rgba(255, 255, 255, 0.6);
   }
 
   .custom-scrollbar::-webkit-scrollbar-corner {
     background: transparent;
   }
 
-  /* Hide scrollbar when not hovering (optional for cleaner look) */
-  .custom-scrollbar:not(:hover)::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+  /* Smooth scrolling enhancement */
+  .scroll-smooth {
+    scroll-behavior: smooth !important;
+  }
+
+  /* Better resize animation from center */
+  @keyframes resize-from-center {
+    0% {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  /* Apply center-based transform origin to the main container */
+  [style*="transform-origin: center center"] {
+    animation: resize-from-center 0.3s ease-out;
+  }
+
+  /* Prevent initial flash and weird outlines */
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  /* Allow text selection only where needed */
+  textarea, input, [contenteditable] {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+  }
+
+  /* Remove any default focus outlines that might cause the weird border */
+  *:focus {
+    outline: none !important;
+  }
+
+  /* Custom focus styles only for interactive elements */
+  button:focus-visible,
+  textarea:focus-visible,
+  input:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.5) !important;
+    outline-offset: 2px;
+  }
+
+  /* Enhance transitions for better UX */
+  .transition-all {
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 300ms;
+  }
+
+  /* Custom focus styles for better accessibility */
+  textarea:focus,
+  input:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+  }
+
+  /* Improve text rendering */
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Better selection colors */
+  ::selection {
+    background-color: rgba(59, 130, 246, 0.3);
+    color: white;
+  }
+
+  /* Ensure smooth transitions for all interactive elements */
+  button, input, textarea {
+    transition: all 0.2s ease;
+  }
+
+  /* Completely hide the hidden input */
+  .sr-only {
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    z-index: -999 !important;
+    border: none !important;
+    background: transparent !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+  }
+
+  /* Prevent any unwanted borders or outlines on initialization */
+  input[type="text"]:not(:focus),
+  textarea:not(:focus) {
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  /* Smooth opacity transitions for initialization */
+  .opacity-0 {
+    opacity: 0 !important;
+  }
+
+  .opacity-100 {
+    opacity: 1 !important;
   }
