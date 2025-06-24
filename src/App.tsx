@@ -70,6 +70,18 @@ function App() {
     loadUserData()
   }, [])
 
+  // Listen for global screenshot capture
+  useEffect(() => {
+    if (window.electronAPI?.onScreenshotCaptured) {
+      console.log('🎯 Setting up screenshot listener') // Add this debug line
+      window.electronAPI.onScreenshotCaptured((screenshot: string) => {
+        console.log('📸 Screenshot received in React!', screenshot.substring(0, 50) + '...') // Add this debug line
+        sendMessage("What do you see on my screen?", screenshot)
+        if (currentMode !== 'chat') setCurrentMode('chat')
+      })
+    }
+  }, [currentMode])
+
   // Update dimensions when content changes
   const updateDimensions = useCallback(() => {
     if (contentRef.current && window.electronAPI?.updateContentDimensions) {

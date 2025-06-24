@@ -126,7 +126,7 @@ function registerGlobalShortcuts() {
   const testShortcut = 'Cmd+Shift+T'
   const toggleShortcut = process.platform === 'darwin' ? 'Cmd+Space' : 'Ctrl+Space'
   const centerShortcut = 'Cmd+Shift+C'
-  const screenshotShortcut = 'Cmd+Shift+S'
+  const screenshotShortcut = 'Cmd+Shift+S' // Changed from 'Cmd+Shift+S'
   
   try {
     globalShortcut.register(testShortcut, () => {
@@ -149,6 +149,7 @@ function registerGlobalShortcuts() {
     })
 
     globalShortcut.register(screenshotShortcut, async () => {
+      console.log('Screenshot shortcut triggered!') // Add debug log
       if (mainWindow) {
         try {
           const screenshot = await captureScreen()
@@ -162,7 +163,7 @@ function registerGlobalShortcuts() {
     console.log('Global shortcuts registered successfully')
     console.log('- Cmd+Space: Toggle window')
     console.log('- Cmd+Shift+C: Center window')
-    console.log('- Cmd+Shift+S: Quick screenshot analysis')
+    console.log('- Cmd+Shift+S: Quick screenshot analysis') 
   } catch (error) {
     console.error('Error registering shortcuts:', error)
   }
