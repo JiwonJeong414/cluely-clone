@@ -42,9 +42,10 @@ function App() {
   const [lastScreenshot, setLastScreenshot] = useState<string | null>(null)
   
   const contentRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
 
   const updateDimensions = useCallback(() => {
     if (contentRef.current && window.electronAPI?.updateContentDimensions) {
@@ -305,7 +306,7 @@ function App() {
   }, [isChatMode, showScreenOptions, scrollToBottom, handleScreenshotAndAnalyze, loadAvailableScreens])
 
   // Handle input changes
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value)
     if (!isChatMode && e.target.value.trim()) {
       setIsChatMode(true)
@@ -317,13 +318,6 @@ function App() {
     e.preventDefault()
     if (inputValue.trim() && !isLoading && !isStreaming) {
       sendMessage(inputValue.trim())
-    }
-  }
-
-  const handleInputKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit(e)
     }
   }
 
@@ -380,8 +374,15 @@ function App() {
     }
   }, [updateDimensions, loadAvailableScreens])
 
-  // Mouse drag handlers - works in both modes
+  // SIMPLIFIED DRAG HANDLERS
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Don't drag if clicking on interactive elements
+    const target = e.target as HTMLElement
+    if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || 
+        target.closest('button') || target.closest('input')) {
+      return
+    }
+    
     e.preventDefault()
     setIsDragging(true)
     setDragStart({
@@ -413,9 +414,11 @@ function App() {
       document.addEventListener('mouseup', handleMouseUp, { passive: false })
       document.body.style.userSelect = 'none'
       document.body.style.pointerEvents = 'none'
+      document.body.style.cursor = 'grabbing'
     } else {
       document.body.style.userSelect = ''
       document.body.style.pointerEvents = ''
+      document.body.style.cursor = ''
     }
 
     return () => {
@@ -423,6 +426,7 @@ function App() {
       document.removeEventListener('mouseup', handleMouseUp)
       document.body.style.userSelect = ''
       document.body.style.pointerEvents = ''
+      document.body.style.cursor = ''
     }
   }, [isDragging, handleMouseMove, handleMouseUp])
 
@@ -436,17 +440,24 @@ function App() {
         width: 'fit-content', 
         height: 'fit-content',
         minWidth: '360px',
-        maxWidth: isChatMode ? '500px' : '380px',
+        maxWidth: '500px',
         transformOrigin: 'center center'
       }}
     >
-      {/* Header */}
+      {/* ========== CHAT HEADER - ALWAYS VISIBLE ========== */}
       <div 
-        className={`px-5 py-4 border-b border-blue-500/10 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        ref={headerRef}
+        className={`px-4 py-3 bg-black/95 backdrop-blur-lg cursor-grab ${isDragging ? 'cursor-grabbing' : ''} ${isChatMode ? 'border-b border-blue-500/10' : ''}`}
         onMouseDown={handleMouseDown}
-        style={{ WebkitAppRegion: 'drag' }}
+        style={{ 
+          WebkitAppRegion: 'drag',
+          position: 'sticky',
+          top: 0,
+          zIndex: 100
+        }}
       >
-        <div className="flex items-center justify-between">
+        {/* Status indicator and action buttons */}
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className={`w-2.5 h-2.5 rounded-full ${
@@ -457,9 +468,10 @@ function App() {
             </div>
             
             <div>
-              <h1 className="text-white font-medium text-base">Wingman</h1>
-              <p className="text-white/50 text-sm">
+              <h1 className="text-white font-medium text-sm">Wingman</h1>
+              <p className="text-white/50 text-xs">
                 {isCapturing ? 'Capturing...' : 
+                 isStreaming ? 'Thinking...' :
                  isChatMode ? 'AI Vision' : 
                  'Ready'}
               </p>
@@ -468,7 +480,7 @@ function App() {
           
           <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
             <button
-              onClick={() => handleScreenshotAndAnalyze()}
+              onClick={() => handleScreenshotAndAnalyze(inputValue || undefined)}
               disabled={isCapturing || isLoading}
               className="p-2 bg-blue-500/20 hover:bg-blue-500/30 disabled:opacity-50 border border-blue-400/30 rounded-lg text-sm transition-colors"
               title="Capture screen (⌘⇧S)"
@@ -488,11 +500,37 @@ function App() {
             </button>
           </div>
         </div>
+
+        {/* Chat Input - Part of Header */}
+        <form onSubmit={handleSubmit} className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={handleInputChange}
+            placeholder="Type a message..."
+            className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-3 py-2 pr-16 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
+            disabled={isLoading || isStreaming}
+            autoFocus
+          />
+          <button
+            type="submit"
+            disabled={!inputValue.trim() || isLoading || isStreaming}
+            className="absolute right-2 top-1/2 transform -translate-y-1/2 px-3 py-1 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
+          >
+            {isLoading ? '...' : 'Send'}
+          </button>
+        </form>
+
+        {/* Shortcuts hint */}
+        <div className="mt-2 text-center">
+          <span className="text-white/30 text-xs">⌘⇧S Screenshot • ⌘⇧D Select • ⎋ {isChatMode ? 'Close' : 'Ready'}</span>
+        </div>
       </div>
 
       {/* Screen Selection Dropdown */}
       {showScreenOptions && (
-        <div className="p-4 border-b border-blue-500/10">
+        <div className="p-4 border-b border-blue-500/10 bg-black/90" style={{ WebkitAppRegion: 'no-drag' }}>
           <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
             <h3 className="text-white/80 text-sm mb-3">Select Screen</h3>
             <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
@@ -501,7 +539,6 @@ function App() {
                   key={screen.id}
                   onClick={() => handleScreenCapture(screen.id)}
                   className="bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/20 rounded-lg p-2 text-left transition-colors"
-                  style={{ WebkitAppRegion: 'no-drag' }}
                 >
                   <img 
                     src={screen.thumbnail} 
@@ -515,7 +552,6 @@ function App() {
             <button
               onClick={() => setShowScreenOptions(false)}
               className="mt-2 w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/20 px-3 py-2 rounded-lg text-white/80 text-xs transition-colors"
-              style={{ WebkitAppRegion: 'no-drag' }}
             >
               Cancel
             </button>
@@ -523,19 +559,20 @@ function App() {
         </div>
       )}
 
-      {/* Messages - only show when there's content */}
+      {/* Messages Area - Only shows when there are messages */}
       {isChatMode && (currentResponse || streamingText || isStreaming) && (
         <div 
           ref={messagesContainerRef}
-          className="px-5 py-3 max-h-96 overflow-y-auto custom-scrollbar"
+          className="px-4 py-3 max-h-80 overflow-y-auto custom-scrollbar bg-black/50"
+          style={{ WebkitAppRegion: 'no-drag' }}
         >
           <div className="space-y-3">
             {/* Streaming response */}
             {(streamingText || isStreaming) && (
               <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3">
-                <div className="text-white text-sm leading-relaxed whitespace-pre-wrap">{streamingText}</div>
-                {isStreaming && (
-                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-400/20">
+                <div className="text-white text-sm leading-relaxed whitespace-pre-wrap selectable">{streamingText}</div>
+                {isStreaming && !streamingText && (
+                  <div className="flex items-center gap-2">
                     <div className="flex gap-1">
                       <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
                       <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
@@ -550,23 +587,9 @@ function App() {
             {/* Final response */}
             {currentResponse && !isStreaming && (
               <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3">
-                <div className="text-white text-sm leading-relaxed whitespace-pre-wrap">{currentResponse.content}</div>
+                <div className="text-white text-sm leading-relaxed whitespace-pre-wrap selectable">{currentResponse.content}</div>
                 <div className="text-blue-300 text-xs mt-2 pt-2 border-t border-blue-400/20">
                   {currentResponse.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
-              </div>
-            )}
-
-            {/* Loading state */}
-            {isLoading && !isStreaming && !streamingText && (
-              <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                  </div>
-                  <span className="text-white/70 text-sm">Thinking...</span>
                 </div>
               </div>
             )}
@@ -576,52 +599,9 @@ function App() {
         </div>
       )}
 
-      {/* Input Area - always show when in chat mode */}
-      {isChatMode && (
-        <div className="p-4 border-t border-blue-500/10">
-          <form onSubmit={handleSubmit} className="relative">
-            <textarea
-              ref={inputRef}
-              value={inputValue}
-              onChange={handleInputChange}
-              onKeyDown={handleInputKeyDown}
-              placeholder="Ask about your screen or type a message..."
-              className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-3 py-2 pr-20 text-white placeholder-white/40 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
-              rows={2}
-              disabled={isLoading || isStreaming}
-              style={{ WebkitAppRegion: 'no-drag' }}
-            />
-            <div className="absolute bottom-2 right-2 flex gap-1">
-              <button
-                type="button"
-                onClick={() => handleScreenshotAndAnalyze(inputValue || undefined)}
-                disabled={isCapturing || isLoading || isStreaming}
-                className="p-1.5 bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
-                title="Capture & Analyze"
-                style={{ WebkitAppRegion: 'no-drag' }}
-              >
-                📸
-              </button>
-              <button
-                type="submit"
-                disabled={!inputValue.trim() || isLoading || isStreaming}
-                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
-                style={{ WebkitAppRegion: 'no-drag' }}
-              >
-                Send
-              </button>
-            </div>
-          </form>
-          
-          <div className="mt-2 text-center">
-            <span className="text-white/30 text-xs">⌘⇧S Screenshot • ⌘⇧D Select • ⎋ Close</span>
-          </div>
-        </div>
-      )}
-
-      {/* Compact mode content */}
-      {!isChatMode && (
-        <div className="p-5">
+      {/* Compact mode welcome content - Only shows when not in chat mode and no messages */}
+      {!isChatMode && !currentResponse && !streamingText && !isStreaming && (
+        <div className="p-5 bg-black/30">
           {shortcutTestSuccess && (
             <div className="mb-4">
               <div className="bg-green-500/20 border border-green-400/30 rounded-lg px-3 py-2">
@@ -636,7 +616,7 @@ function App() {
           <div className="text-center">
             <h2 className="text-white text-lg mb-2">Ready to help</h2>
             <p className="text-white/50 text-sm mb-4">
-              Press <kbd className="bg-white/10 px-2 py-1 rounded text-xs">⌘⇧S</kbd> to capture screen or <kbd className="bg-white/10 px-2 py-1 rounded text-xs">⌘↵</kbd> to chat
+              Type above, press <kbd className="bg-white/10 px-2 py-1 rounded text-xs">⌘⇧S</kbd> to capture screen, or <kbd className="bg-white/10 px-2 py-1 rounded text-xs">⌘↵</kbd> to chat
             </p>
             
             {appVersion && (
@@ -652,26 +632,6 @@ function App() {
             )}
           </div>
         </div>
-      )}
-
-      {/* Hidden input for typing detection */}
-      {!isChatMode && isInitialized && (
-        <input
-          type="text"
-          value={inputValue}
-          onChange={handleInputChange}
-          className="sr-only"
-          style={{ 
-            position: 'absolute',
-            left: '-9999px',
-            top: '-9999px',
-            width: '1px',
-            height: '1px',
-            opacity: 0,
-            pointerEvents: 'none'
-          }}
-          autoFocus
-        />
       )}
     </div>
   )
