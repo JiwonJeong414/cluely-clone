@@ -8,14 +8,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-      },
-    },
   },
   server: {
     port: 5173,
+    host: 'localhost',
+    strictPort: true,
   },
   resolve: {
     alias: {
