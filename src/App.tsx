@@ -1,46 +1,91 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
+
+console.log('🚀 APP.TSX IS LOADING!!!')
+console.log('🚀 APP.TSX IS LOADING!!!')
+console.log('🚀 APP.TSX IS LOADING!!!')
 
 function App() {
+  console.log('🎯 APP COMPONENT FUNCTION CALLED!!!')
   const [appVersion, setAppVersion] = useState<string>('')
   const [shortcutTestSuccess, setShortcutTestSuccess] = useState<boolean>(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
+  const updateDimensions = useCallback(() => {
+    console.log('🔧 updateDimensions called')
+    if (contentRef.current && window.electronAPI?.updateContentDimensions) {
+      console.log('✅ Both contentRef and electronAPI available')
+      
+      // Force a reflow to ensure accurate measurements
+      const element = contentRef.current
+      
+      // Get the actual rendered dimensions
+      const rect = element.getBoundingClientRect()
+      
+      // Calculate actual content size
+      const width = Math.ceil(rect.width)
+      const height = Math.ceil(rect.height)
+      
+      console.log('📏 Content rect:', rect)
+      console.log('📏 Computed dimensions:', { width, height })
+      
+      if (width > 0 && height > 0) {
+        console.log('🚀 Calling updateContentDimensions...')
+        window.electronAPI.updateContentDimensions({ width, height })
+      } else {
+        console.log('❌ Invalid dimensions, not updating')
+      }
+    } else {
+      console.log('❌ Missing requirements:', {
+        contentRef: !!contentRef.current,
+        electronAPI: !!window.electronAPI,
+        updateContentDimensions: !!window.electronAPI?.updateContentDimensions
+      })
+    }
+  }, [])
 
   useEffect(() => {
     if (window.electronAPI) {
       window.electronAPI.getAppVersion().then(version => {
         setAppVersion(version)
+        // Update dimensions when shortcut test state changes
+  useEffect(() => {
+    if (shortcutTestSuccess) {
+      setTimeout(updateDimensions, 100)
+    }
+  }, [shortcutTestSuccess, updateDimensions]) //dimensions after version is loaded
+        setTimeout(updateDimensions, 150)
       })
       
       // Listen for shortcut test success
       window.electronAPI.onShortcutTestSuccess(() => {
         console.log('🎉 Shortcut test success received in React!')
         setShortcutTestSuccess(true)
+        // Update dimensions after state change
+        setTimeout(updateDimensions, 100)
       })
     }
 
-    const updateDimensions = () => {
-      if (contentRef.current) {
-        const height = contentRef.current.scrollHeight
-        const width = contentRef.current.scrollWidth
-        console.log('📏 Updating dimensions:', { width, height })
-        window.electronAPI?.updateContentDimensions?.({ width, height })
-      }
-    }
-
-    // Update dimensions on mount and when content changes
-    updateDimensions()
+    // Initial size update with a delay to ensure content is rendered
+    const initialTimeout = setTimeout(updateDimensions, 200)
     
     // Set up resize observer
-    const resizeObserver = new ResizeObserver(updateDimensions)
+    const resizeObserver = new ResizeObserver((entries) => {
+      console.log('🔄 ResizeObserver triggered')
+      // Small delay to ensure layout is complete
+      setTimeout(updateDimensions, 50)
+    })
+    
     if (contentRef.current) {
       resizeObserver.observe(contentRef.current)
     }
 
     return () => {
+      clearTimeout(initialTimeout)
       resizeObserver.disconnect()
     }
-  }, [])
+  }, [updateDimensions])
+
+  // Update
 
   const handleHide = () => {
     window.electronAPI?.hideWindow()
@@ -49,13 +94,15 @@ function App() {
   return (
     <div 
       ref={contentRef}
-      className="w-full h-full bg-black/90 backdrop-blur-xl rounded-xl shadow-2xl border border-gray-600/30 relative overflow-hidden font-sans"
-    >      {/* Subtle background pattern */}
+      className="bg-black/90 backdrop-blur-xl rounded-xl shadow-2xl border border-gray-600/30 relative overflow-hidden font-sans min-w-[300px]"
+      style={{ width: 'fit-content', height: 'fit-content' }}
+    >
+      {/* Subtle background pattern */}
       <div className="absolute inset-0 opacity-5">
         <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-purple-500/20 to-pink-500/20"></div>
       </div>
       
-      <div className="relative p-5">
+      <div className="relative p-5 w-[360px]"> {/* Fixed content width */}
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -100,6 +147,16 @@ function App() {
             </div>
           </div>
         </div>
+
+        {/* Shortcut test feedback */}
+        {shortcutTestSuccess && (
+          <div className="mt-3 bg-green-800/30 border border-green-600/30 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+              <span className="text-green-300 text-sm">Shortcut test successful!</span>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         {appVersion && (
