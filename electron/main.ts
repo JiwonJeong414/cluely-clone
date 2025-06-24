@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, globalShortcut, screen, desktopCapturer } from 'electron'
 import { join } from 'path'
 
 const isDev = process.env.NODE_ENV === 'development'
@@ -11,9 +11,9 @@ function createWindow() {
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
   mainWindow = new BrowserWindow({
-    width: 400, // Increased from 280
-    height: 140, // Slightly increased for better proportions
-    x: Math.floor(screenWidth / 2 - 200), // Adjusted for new width
+    width: 400,
+    height: 140,
+    x: Math.floor(screenWidth / 2 - 200),
     y: 80,
     webPreferences: {
       nodeIntegration: false,
@@ -44,7 +44,6 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
     
-    // Filter out noisy Chromium warnings
     mainWindow.webContents.on('console-message', (event, level, message) => {
       if (message.includes('Autofill') || message.includes('SharedImageManager')) {
         event.preventDefault()
@@ -87,7 +86,7 @@ function centerWindow() {
     const bounds = mainWindow.getBounds()
     
     const newX = Math.floor(screenWidth / 2 - bounds.width / 2)
-    const newY = Math.floor(screenHeight / 3) // Position in upper third
+    const newY = Math.floor(screenHeight / 3)
     
     mainWindow.setPosition(newX, newY, true)
     console.log('Window centered')
@@ -107,6 +106,7 @@ function registerGlobalShortcuts() {
   const testShortcut = 'Cmd+Shift+T'
   const toggleShortcut = process.platform === 'darwin' ? 'Cmd+Space' : 'Ctrl+Space'
   const centerShortcut = 'Cmd+Shift+C'
+  const screenshotShortcut = 'Cmd+Shift+S' // New shortcut for quick screenshot
   
   try {
     globalShortcut.register(testShortcut, () => {
@@ -128,11 +128,85 @@ function registerGlobalShortcuts() {
       centerWindow()
     })
 
+    // New shortcut for quick screenshot analysis
+    globalShortcut.register(screenshotShortcut, async () => {
+      if (mainWindow) {
+        try {
+          const screenshot = await captureScreen()
+          mainWindow.webContents.send('screenshot-captured', screenshot)
+        } catch (error) {
+          console.error('Error capturing screenshot:', error)
+        }
+      }
+    })
+
     console.log('Global shortcuts registered successfully')
     console.log('- Cmd+Space: Toggle window')
     console.log('- Cmd+Shift+C: Center window')
+    console.log('- Cmd+Shift+S: Quick screenshot analysis')
   } catch (error) {
     console.error('Error registering shortcuts:', error)
+  }
+}
+
+// Screen capture functionality
+async function captureScreen(): Promise<string> {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1920, height: 1080 }
+    })
+    
+    if (sources.length > 0) {
+      // Get the primary screen (usually the first one)
+      const primarySource = sources[0]
+      return primarySource.thumbnail.toDataURL()
+    }
+    
+    throw new Error('No screen sources available')
+  } catch (error) {
+    console.error('Error capturing screen:', error)
+    throw error
+  }
+}
+
+// Get available screens/displays
+async function getAvailableScreens() {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 300, height: 200 }
+    })
+    
+    return sources.map(source => ({
+      id: source.id,
+      name: source.name,
+      thumbnail: source.thumbnail.toDataURL(),
+      display_id: source.display_id
+    }))
+  } catch (error) {
+    console.error('Error getting available screens:', error)
+    return []
+  }
+}
+
+// Capture specific screen by ID
+async function captureScreenById(sourceId: string): Promise<string> {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 1920, height: 1080 }
+    })
+    
+    const source = sources.find(s => s.id === sourceId)
+    if (!source) {
+      throw new Error(`Screen source with ID ${sourceId} not found`)
+    }
+    
+    return source.thumbnail.toDataURL()
+  } catch (error) {
+    console.error('Error capturing screen by ID:', error)
+    throw error
   }
 }
 
@@ -192,7 +266,7 @@ ipcMain.handle('update-content-dimensions', async (event, { width, height }) => 
   try {
     const currentBounds = mainWindow.getBounds()
     const padding = 20
-    const newWidth = Math.max(Math.min(width + padding, 600), 300) // Updated limits
+    const newWidth = Math.max(Math.min(width + padding, 600), 300)
     const newHeight = Math.max(Math.min(height + padding, 300), 80)
     
     mainWindow.setSize(newWidth, newHeight, true)
@@ -202,19 +276,16 @@ ipcMain.handle('update-content-dimensions', async (event, { width, height }) => 
   }
 })
 
-// Improved drag handling with smoother movement
 ipcMain.handle('drag-window', async (event, { deltaX, deltaY }) => {
   if (mainWindow) {
     const currentBounds = mainWindow.getBounds()
     const newX = currentBounds.x + deltaX
     const newY = currentBounds.y + deltaY
     
-    // Use setPosition with animate=false for smoother movement
     mainWindow.setPosition(newX, newY, false)
   }
 })
 
-// Alternative drag method for even smoother movement
 ipcMain.handle('set-window-position', async (event, { x, y }) => {
   if (mainWindow) {
     mainWindow.setPosition(Math.round(x), Math.round(y), false)
@@ -223,6 +294,34 @@ ipcMain.handle('set-window-position', async (event, { x, y }) => {
 
 ipcMain.handle('center-window', () => {
   centerWindow()
+})
+
+// New IPC handlers for screen capture
+ipcMain.handle('capture-screen', async () => {
+  try {
+    return await captureScreen()
+  } catch (error) {
+    console.error('IPC: Error capturing screen:', error)
+    throw error
+  }
+})
+
+ipcMain.handle('get-available-screens', async () => {
+  try {
+    return await getAvailableScreens()
+  } catch (error) {
+    console.error('IPC: Error getting available screens:', error)
+    throw error
+  }
+})
+
+ipcMain.handle('capture-screen-by-id', async (event, sourceId: string) => {
+  try {
+    return await captureScreenById(sourceId)
+  } catch (error) {
+    console.error('IPC: Error capturing screen by ID:', error)
+    throw error
+  }
 })
 
 ipcMain.on('shortcut-test-success', () => {

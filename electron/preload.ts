@@ -13,9 +13,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onShortcutTestSuccess: (callback: () => void) => {
     ipcRenderer.on('shortcut-test-success', callback)
   },
+  
+  // New screen capture methods
+  captureScreen: () => ipcRenderer.invoke('capture-screen'),
+  getAvailableScreens: () => ipcRenderer.invoke('get-available-screens'),
+  captureScreenById: (sourceId: string) => ipcRenderer.invoke('capture-screen-by-id', sourceId),
+  onScreenshotCaptured: (callback: (screenshot: string) => void) => {
+    ipcRenderer.on('screenshot-captured', (event, screenshot) => callback(screenshot))
+  },
 })
 
 // Type definitions
+export interface ScreenSource {
+  id: string
+  name: string
+  thumbnail: string
+  display_id: string
+}
+
 export interface ElectronAPI {
   getAppVersion: () => Promise<string>
   toggleWindow: () => Promise<void>
@@ -25,6 +40,12 @@ export interface ElectronAPI {
   dragWindow: (deltaX: number, deltaY: number) => Promise<void>
   centerWindow: () => Promise<void>
   onShortcutTestSuccess: (callback: () => void) => void
+  
+  // Screen capture methods
+  captureScreen: () => Promise<string>
+  getAvailableScreens: () => Promise<ScreenSource[]>
+  captureScreenById: (sourceId: string) => Promise<string>
+  onScreenshotCaptured: (callback: (screenshot: string) => void) => void
 }
 
 declare global {
