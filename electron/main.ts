@@ -1,27 +1,20 @@
 import { app, BrowserWindow, ipcMain, globalShortcut, screen } from 'electron'
 import { join } from 'path'
 
-console.log('🚀 MAIN.TS IS LOADING!!!')
-console.log('🚀 MAIN.TS IS LOADING!!!')
-console.log('🚀 MAIN.TS IS LOADING!!!')
-
 const isDev = process.env.NODE_ENV === 'development'
-console.log('🔧 isDev:', isDev)
 
 let mainWindow: BrowserWindow | null = null
 let isWindowVisible = false
 
 function createWindow() {
-  console.log('🏗️ CREATE WINDOW FUNCTION CALLED!!!')
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width: screenWidth } = primaryDisplay.workAreaSize
-  console.log('📺 Screen width:', screenWidth)
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
   mainWindow = new BrowserWindow({
-    width: 400,
-    height: 300,
-    x: Math.floor(screenWidth / 2 - 200),
-    y: 50,
+    width: 280,
+    height: 120,
+    x: Math.floor(screenWidth / 2 - 140),
+    y: 80,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -29,79 +22,47 @@ function createWindow() {
       webSecurity: true,
       allowRunningInsecureContent: false,
     },
-    // Floating window properties
-    show: isDev, // Show immediately in dev mode for debugging
+    show: isDev,
     alwaysOnTop: true,
     frame: false,
     transparent: true,
-    resizable: true,
+    resizable: false,
     fullscreenable: false,
     skipTaskbar: true,
     titleBarStyle: 'hidden',
-    minWidth: 300,
-    minHeight: 200,
-    maxWidth: 800,
-    maxHeight: 600,
+    minWidth: 200,
+    minHeight: 80,
+    maxWidth: 400,
+    maxHeight: 300,
   })
 
-  console.log('🪟 Window created with options')
-
-  // Load the app
   if (isDev) {
-    console.log('🌐 Loading dev URL...')
     mainWindow.loadURL('http://localhost:5173')
-    console.log('🔧 Opening dev tools...')
-    mainWindow.webContents.openDevTools() // ENABLE DEV TOOLS
-    console.log('Loading dev URL: http://localhost:5173')
+    mainWindow.webContents.openDevTools()
+    
+    // Filter out noisy Chromium warnings
+    mainWindow.webContents.on('console-message', (event, level, message) => {
+      if (message.includes('Autofill') || message.includes('SharedImageManager')) {
+        event.preventDefault()
+      }
+    })
   } else {
     mainWindow.loadFile(join(__dirname, '../dist/index.html'))
   }
 
-  // Set initial visibility state
   isWindowVisible = isDev
-  console.log('👁️ Initial visibility:', isWindowVisible)
 
-  // Handle window events
   mainWindow.on('closed', () => {
-    console.log('🗑️ Window closed')
     mainWindow = null
   })
 
-  mainWindow.on('blur', () => {
-    console.log('😵‍💫 Window lost focus')
-  })
-
-  // Enhanced logging for content loading
-  mainWindow.webContents.on('did-start-loading', () => {
-    console.log('🔄 Window started loading content...')
-  })
-
   mainWindow.webContents.on('did-finish-load', () => {
-    console.log('✅ Window finished loading content')
-    console.log('🔍 Window visibility:', isWindowVisible)
-  })
-
-  mainWindow.webContents.on('dom-ready', () => {
-    console.log('🎯 DOM is ready')
-  })
-
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('❌ Failed to load content:', errorCode, errorDescription)
-  })
-
-  // Log when window becomes visible
-  mainWindow.on('show', () => {
-    console.log('👁️ Window is now visible')
-  })
-
-  mainWindow.on('hide', () => {
-    console.log('🙈 Window is now hidden')
+    console.log('Window content loaded')
   })
 }
 
 function showWindow() {
   if (mainWindow && !isWindowVisible) {
-    console.log('🔍 Showing window...')
     mainWindow.show()
     mainWindow.focus()
     isWindowVisible = true
@@ -110,14 +71,27 @@ function showWindow() {
 
 function hideWindow() {
   if (mainWindow && isWindowVisible) {
-    console.log('🙈 Hiding window...')
     mainWindow.hide()
     isWindowVisible = false
   }
 }
 
+function centerWindow() {
+  if (mainWindow) {
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
+    const bounds = mainWindow.getBounds()
+    
+    const newX = Math.floor(screenWidth / 2 - bounds.width / 2)
+    const newY = Math.floor(screenHeight / 3) // Position in upper third
+    
+    mainWindow.setPosition(newX, newY, true)
+    console.log('Window centered')
+  }
+}
+
 function toggleWindow() {
-  console.log('🔄 Toggle window called, current visibility:', isWindowVisible)
+  console.log('Toggle window, current visibility:', isWindowVisible)
   if (isWindowVisible) {
     hideWindow()
   } else {
@@ -126,95 +100,46 @@ function toggleWindow() {
 }
 
 function registerGlobalShortcuts() {
-  console.log('Attempting to register global shortcuts...')
-  console.log('Platform:', process.platform)
-  
-  // Test if global shortcuts are working at all
   const testShortcut = 'Cmd+Shift+T'
+  const toggleShortcut = process.platform === 'darwin' ? 'Cmd+Space' : 'Ctrl+Space'
+  const centerShortcut = 'Cmd+Shift+C'
+  
   try {
-    const testSuccess = globalShortcut.register(testShortcut, () => {
-      console.log('🎉 TEST SHORTCUT WORKED! Global shortcuts are functioning!')
-      // Show a notification or alert to confirm it worked
+    globalShortcut.register(testShortcut, () => {
+      console.log('Test shortcut working')
       if (mainWindow) {
         mainWindow.webContents.send('shortcut-test-success')
       }
     })
-    
-    if (testSuccess) {
-      console.log(`✅ Test shortcut registered: ${testShortcut}`)
-    } else {
-      console.log(`❌ Test shortcut failed: ${testShortcut}`)
-    }
-  } catch (error) {
-    console.error(`Error registering test shortcut:`, error)
-  }
-  
-  // Main toggle shortcut - Cmd+Space (or Ctrl+Space on other platforms)
-  const toggleShortcut = process.platform === 'darwin' ? 'Cmd+Space' : 'Ctrl+Space'
-  
-  try {
-    const success1 = globalShortcut.register(toggleShortcut, () => {
-      console.log(`${toggleShortcut} pressed - toggling window`)
+
+    globalShortcut.register(toggleShortcut, () => {
       toggleWindow()
     })
-    
-    if (success1) {
-      console.log(`✅ Successfully registered: ${toggleShortcut}`)
-    } else {
-      console.log(`❌ Failed to register: ${toggleShortcut}`)
-    }
-  } catch (error) {
-    console.error(`Error registering ${toggleShortcut}:`, error)
-  }
 
-  // Alternative shortcut - Cmd+Shift+A
-  try {
-    const success2 = globalShortcut.register('Cmd+Shift+A', () => {
-      console.log('Cmd+Shift+A pressed - toggling window')
+    globalShortcut.register('Cmd+Shift+A', () => {
       toggleWindow()
     })
-    
-    if (success2) {
-      console.log('✅ Successfully registered: Cmd+Shift+A')
-    } else {
-      console.log('❌ Failed to register: Cmd+Shift+A')
-    }
-  } catch (error) {
-    console.error('Error registering Cmd+Shift+A:', error)
-  }
 
-  // Test shortcut registration
-  const registeredShortcuts = globalShortcut.isRegistered(toggleShortcut)
-  console.log(`Is ${toggleShortcut} registered?`, registeredShortcuts)
-  
-  console.log('Global shortcuts registration complete')
-  console.log(`- ${testShortcut}: Test shortcut (should work)`)
-  console.log(`- ${toggleShortcut}: Toggle window`)
-  console.log('- Cmd+Shift+A: Toggle window (alternative)')
-  
-  // Check if we're on macOS and provide helpful info
-  if (process.platform === 'darwin') {
-    console.log('💡 On macOS, you may need to grant Accessibility permissions:')
-    console.log('   System Preferences > Security & Privacy > Privacy > Accessibility')
-    console.log('   Add your app to the list of allowed applications')
+    globalShortcut.register(centerShortcut, () => {
+      centerWindow()
+    })
+
+    console.log('Global shortcuts registered successfully')
+    console.log('- Cmd+Space: Toggle window')
+    console.log('- Cmd+Shift+C: Center window')
+  } catch (error) {
+    console.error('Error registering shortcuts:', error)
   }
 }
 
-// App event handlers
 app.whenReady().then(() => {
-  console.log('🚀 APP IS READY!!!')
-  console.log('🚀 APP IS READY!!!')
-  console.log('🚀 APP IS READY!!!')
-  console.log('App is ready, creating window...')
+  console.log('App ready, initializing...')
   createWindow()
-  console.log('Window created, registering global shortcuts...')
   registerGlobalShortcuts()
-  console.log('App initialization complete')
-  console.log('✅ EVERYTHING SHOULD BE DONE NOW')
+  console.log('Initialization complete')
 })
 
 app.on('window-all-closed', () => {
-  // Keep app running even when window is closed
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -227,11 +152,9 @@ app.on('activate', () => {
 })
 
 app.on('will-quit', () => {
-  // Unregister all shortcuts
   globalShortcut.unregisterAll()
 })
 
-// Security: Prevent new window creation
 app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
     return { action: 'deny' }
@@ -256,58 +179,38 @@ ipcMain.handle('show-window', () => {
 })
 
 ipcMain.handle('update-content-dimensions', async (event, { width, height }) => {
-  console.log('🔄 IPC: update-content-dimensions called with:', { width, height })
+  console.log('Updating window dimensions:', { width, height })
   
-  if (!mainWindow) {
-    console.log('❌ No main window available')
-    return
-  }
-
-  if (!width || !height || width <= 0 || height <= 0) {
-    console.log('❌ Invalid dimensions:', { width, height })
+  if (!mainWindow || !width || !height || width <= 0 || height <= 0) {
     return
   }
 
   try {
     const currentBounds = mainWindow.getBounds()
-    console.log('📍 Current bounds:', currentBounds)
+    const padding = 20
+    const newWidth = Math.max(Math.min(width + padding, 400), 200)
+    const newHeight = Math.max(Math.min(height + padding, 300), 80)
     
-    // Add some padding but keep it reasonable
-    const padding = 16
-    const newWidth = Math.max(Math.min(width + padding, 800), 300) // Clamp between 300-800
-    const newHeight = Math.max(Math.min(height + padding, 600), 200) // Clamp between 200-600
-    
-    // Keep the window centered horizontally, but maintain Y position
-    const primaryDisplay = screen.getPrimaryDisplay()
-    const { width: screenWidth } = primaryDisplay.workAreaSize
-    const newX = Math.floor(screenWidth / 2 - newWidth / 2)
-    
-    const newBounds = {
-      x: newX,
-      y: currentBounds.y,
-      width: newWidth,
-      height: newHeight
-    }
-    
-    console.log('🎯 Setting new bounds:', newBounds)
-    
-    // Use setSize instead of setBounds for more reliable resizing
-    mainWindow.setSize(newWidth, newHeight, true) // animate = true
-    mainWindow.setPosition(newX, currentBounds.y, true) // animate = true
-    
-    console.log('✅ Window resized successfully')
+    mainWindow.setSize(newWidth, newHeight, true)
+    console.log('Window resized successfully')
   } catch (error) {
-    console.error('❌ Error updating window dimensions:', error)
+    console.error('Error updating window dimensions:', error)
   }
 })
 
-// Handle shortcut test success
-ipcMain.on('shortcut-test-success', () => {
-  console.log('Shortcut test success received from renderer')
+ipcMain.handle('drag-window', async (event, { deltaX, deltaY }) => {
+  if (mainWindow) {
+    const currentBounds = mainWindow.getBounds()
+    const newX = currentBounds.x + deltaX
+    const newY = currentBounds.y + deltaY
+    mainWindow.setPosition(newX, newY, true)
+  }
 })
 
-// Handle any uncaught exceptions
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error)
-  app.quit()
+ipcMain.handle('center-window', () => {
+  centerWindow()
+})
+
+ipcMain.on('shortcut-test-success', () => {
+  console.log('Shortcut test success received')
 })

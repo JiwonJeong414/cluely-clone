@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hideWindow: () => ipcRenderer.invoke('hide-window'),
   showWindow: () => ipcRenderer.invoke('show-window'),
   updateContentDimensions: (dimensions: { width: number; height: number }) => ipcRenderer.invoke('update-content-dimensions', dimensions),
+  dragWindow: (deltas: { deltaX: number; deltaY: number }) => ipcRenderer.invoke('drag-window', deltas),
   onShortcutTestSuccess: (callback: () => void) => {
     ipcRenderer.on('shortcut-test-success', callback)
   },
@@ -18,6 +19,7 @@ export interface ElectronAPI {
   hideWindow: () => Promise<void>
   showWindow: () => Promise<void>
   updateContentDimensions: (dimensions: { width: number; height: number }) => Promise<void>
+  dragWindow: (deltas: { deltaX: number; deltaY: number }) => Promise<void>
   onShortcutTestSuccess: (callback: () => void) => void
 }
 
