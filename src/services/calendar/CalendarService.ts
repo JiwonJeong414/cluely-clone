@@ -109,6 +109,8 @@ export class CalendarService {
   async getEventsForDateRange(startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
     if (!this.calendar) this.initializeCalendar()
 
+    console.log('📅 DEBUG: Fetching events from', startDate.toISOString(), 'to', endDate.toISOString())
+
     try {
       const response = await this.calendar.events.list({
         calendarId: 'primary',
@@ -118,15 +120,36 @@ export class CalendarService {
         orderBy: 'startTime'
       })
 
+      console.log('📅 DEBUG: Raw Google Calendar response:', {
+        itemsCount: response.data.items?.length || 0,
+        items: response.data.items?.map((item: any) => ({
+          id: item.id,
+          summary: item.summary,
+          start: item.start,
+          end: item.end
+        }))
+      })
+
       // Update calendar sync time
       const user = this.authService.getCurrentUser()
       if (user) {
         await this.db.updateCalendarSyncTime(user.id)
       }
 
-      return response.data.items?.map(this.formatEvent) || []
+      const formattedEvents = response.data.items?.map(this.formatEvent) || []
+      console.log('📅 DEBUG: Formatted events:', formattedEvents.length)
+
+      return formattedEvents
     } catch (error) {
-      console.error('Error fetching events for date range:', error)
+      console.error('❌ ERROR: Calendar API call failed:', error)
+      
+      // Log more details about the error
+      if (error && typeof error === 'object' && 'response' in error) {
+        const apiError = error as any
+        console.error('❌ ERROR: Response status:', apiError.response.status)
+        console.error('❌ ERROR: Response data:', apiError.response.data)
+      }
+      
       throw error
     }
   }
@@ -136,7 +159,14 @@ export class CalendarService {
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
 
-    return this.getEventsForDateRange(startOfDay, endOfDay)
+    console.log('📅 DEBUG: Getting today\'s events')
+    console.log('Start of day:', startOfDay.toISOString())
+    console.log('End of day:', endOfDay.toISOString())
+
+    const events = await this.getEventsForDateRange(startOfDay, endOfDay)
+    console.log(`📅 DEBUG: Found ${events.length} events for today`)
+    
+    return events
   }
 
   async getThisWeeksEvents(): Promise<CalendarEvent[]> {
@@ -525,5 +555,33 @@ export class CalendarService {
     }
     
     return context
+  }
+
+  // Also add this method to test the OAuth connection
+  async testCalendarConnection(): Promise<boolean> {
+    if (!this.calendar) this.initializeCalendar()
+
+    try {
+      console.log('🔍 Testing calendar connection...')
+      
+      // Try to get calendar list first
+      const calendarListResponse = await this.calendar.calendarList.list()
+      console.log('📋 Available calendars:', calendarListResponse.data.items?.map((cal: any) => ({
+        id: cal.id,
+        summary: cal.summary,
+        primary: cal.primary
+      })))
+
+      // Test getting primary calendar info
+      const primaryCalendar = await this.calendar.calendars.get({
+        calendarId: 'primary'
+      })
+      console.log('🏠 Primary calendar:', primaryCalendar.data)
+
+      return true
+    } catch (error) {
+      console.error('❌ Calendar connection test failed:', error)
+      return false
+    }
   }
 }

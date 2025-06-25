@@ -22,6 +22,7 @@ interface Message {
 }
 
 type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar'
+type CalendarRange = 'today' | 'week' | 'next-week'
 
 function App() {
   // Existing state
@@ -51,6 +52,8 @@ function App() {
   // Calendar state
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
   const [calendarContext, setCalendarContext] = useState<string>('')
+  const [selectedCalendarRange, setSelectedCalendarRange] = useState<CalendarRange>('today')
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false)
   
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -66,6 +69,11 @@ function App() {
             
             const connection = await window.electronAPI.auth.getGoogleConnection()
             setGoogleConnection(connection)
+            
+            // Load today's calendar events automatically
+            if (connection.isConnected) {
+              loadCalendarEvents('today')
+            }
           }
         } catch (error) {
           console.error('Error loading user data:', error)
@@ -76,12 +84,54 @@ function App() {
     loadUserData()
   }, [])
 
+  // Load calendar events function
+  const loadCalendarEvents = async (range: CalendarRange) => {
+    if (!window.electronAPI?.calendar || !user || !googleConnection.isConnected) return
+
+    setIsLoadingCalendar(true)
+    try {
+      let result
+      switch (range) {
+        case 'today':
+          result = await window.electronAPI.calendar.getToday()
+          break
+        case 'week':
+          result = await window.electronAPI.calendar.getWeek()
+          break
+        case 'next-week':
+          result = await window.electronAPI.calendar.getNextWeek()
+          break
+        default:
+          result = await window.electronAPI.calendar.getToday()
+      }
+
+      if (result.success) {
+        setCalendarEvents(result.events || [])
+        console.log(`📅 Loaded ${result.events?.length || 0} events for ${range}`)
+      } else {
+        console.error('Failed to load calendar events:', result.error)
+        setCalendarEvents([])
+      }
+    } catch (error) {
+      console.error('Error loading calendar events:', error)
+      setCalendarEvents([])
+    } finally {
+      setIsLoadingCalendar(false)
+    }
+  }
+
+  // Update calendar range and load events
+  const handleCalendarRangeChange = (range: CalendarRange) => {
+    setSelectedCalendarRange(range)
+    loadCalendarEvents(range)
+  }
+
   // Listen for global screenshot capture
   useEffect(() => {
     if (window.electronAPI?.onScreenshotCaptured) {
-      console.log('Setting up screenshot listener') // Add this debug line
+      console.log('Setting up screenshot listener')
       window.electronAPI.onScreenshotCaptured((screenshot: string) => {
-        console.log('📸 Screenshot received in React!', screenshot.substring(0, 50) + '...') // Add this debug line
+        console.log('📸 Screenshot received in React!', screenshot.substring(0, 50) + '...')
         sendMessage("What do you see on my screen?", screenshot)
         if (currentMode !== 'chat') setCurrentMode('chat')
       })
@@ -118,6 +168,11 @@ function App() {
         // Refresh Google connection
         const connection = await window.electronAPI.auth.getGoogleConnection()
         setGoogleConnection(connection)
+        
+        // Load calendar events after sign in
+        if (connection.isConnected) {
+          loadCalendarEvents('today')
+        }
       } else {
         console.error('Sign in failed:', result.error)
       }
@@ -135,6 +190,7 @@ function App() {
       await window.electronAPI.auth.signOut()
       setUser(null)
       setGoogleConnection({ isConnected: false })
+      setCalendarEvents([])
       setCurrentMode('chat')
     } catch (error) {
       console.error('Error signing out:', error)
@@ -304,6 +360,26 @@ function App() {
     return ''
   }
 
+  // Format time helper
+  const formatEventTime = (event: CalendarEvent): string => {
+    if (event.start.date) {
+      return 'All day'
+    }
+    
+    const start = new Date(event.start.dateTime!)
+    const end = new Date(event.end.dateTime!)
+    
+    const formatTime = (date: Date) => {
+      return date.toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      })
+    }
+    
+    return `${formatTime(start)} - ${formatTime(end)}`
+  }
+
   // Example queries that will trigger calendar integration
   const calendarExampleQueries = [
     "What's on my schedule today?",
@@ -467,7 +543,6 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
       await sendMessage(query)
     }
   }
-  // Replace the debug useEffect with this clean version:
 
   useEffect(() => {
     console.log('Setting up Drive mode toggle listener...')
@@ -492,7 +567,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     } else {
       console.log('❌ window.electronAPI?.onToggleDriveMode not available')
     }
-  }, []) // Remove currentMode from dependencies
+  }, [])
 
   // Keep your keyboard shortcut handler as is:
   useEffect(() => {
@@ -513,6 +588,11 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         e.preventDefault()
         setCurrentMode('calendar')
         
+        // Load calendar events when switching to calendar mode
+        if (user && googleConnection.isConnected) {
+          loadCalendarEvents(selectedCalendarRange)
+        }
+        
         if (window.electronAPI?.showWindow) {
           window.electronAPI.showWindow()
         }
@@ -525,7 +605,14 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
           setCurrentMode(prev => {
             const modes: AppMode[] = ['chat', 'drive', 'calendar', 'cleanup', 'organize']
             const currentIndex = modes.indexOf(prev)
-            return modes[(currentIndex + 1) % modes.length]
+            const nextMode = modes[(currentIndex + 1) % modes.length]
+            
+            // Load calendar events when switching to calendar mode
+            if (nextMode === 'calendar') {
+              loadCalendarEvents(selectedCalendarRange)
+            }
+            
+            return nextMode
           })
         } else {
           setCurrentMode('drive')
@@ -540,12 +627,17 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [user, googleConnection])
+  }, [user, googleConnection, selectedCalendarRange])
 
   // Debug: Add this useEffect to log mode changes
   useEffect(() => {
     console.log('🔄 Mode changed to:', currentMode)
-  }, [currentMode])
+    
+    // Load calendar events when switching to calendar mode
+    if (currentMode === 'calendar' && user && googleConnection.isConnected && calendarEvents.length === 0) {
+      loadCalendarEvents(selectedCalendarRange)
+    }
+  }, [currentMode, user, googleConnection.isConnected])
 
   // Render mode content
   const renderModeContent = () => {
@@ -785,12 +877,10 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   {(['today', 'week', 'next-week'] as const).map((range) => (
                     <button
                       key={range}
-                      onClick={() => {
-                        // This will be implemented with state
-                        console.log('Calendar range selected:', range)
-                      }}
-                      className={`px-2 py-1 text-xs rounded transition-colors ${
-                        range === 'today'
+                      onClick={() => handleCalendarRangeChange(range)}
+                      disabled={isLoadingCalendar}
+                      className={`px-2 py-1 text-xs rounded transition-colors disabled:opacity-50 ${
+                        selectedCalendarRange === range
                           ? 'bg-purple-500/30 border border-purple-400/50 text-white'
                           : 'bg-purple-500/10 border border-purple-400/20 text-white/70 hover:bg-purple-500/20'
                       }`}
@@ -801,9 +891,75 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                 </div>
               </div>
               
-              <div className="text-center text-white/60 py-8">
-                Calendar view coming soon...
-              </div>
+              {/* Loading state */}
+              {isLoadingCalendar && (
+                <div className="text-center py-4">
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
+                    </div>
+                    <span className="text-purple-300 text-sm">Loading events...</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Calendar Events */}
+              {!isLoadingCalendar && calendarEvents.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                  <div className="text-white/60 text-xs mb-2">
+                    {calendarEvents.length} event{calendarEvents.length !== 1 ? 's' : ''} found
+                  </div>
+                  {calendarEvents.map((event) => (
+                    <div
+                      key={event.id}
+                      className="bg-purple-500/10 border border-purple-400/20 rounded-lg p-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white/90 text-sm font-medium truncate">
+                            {event.summary}
+                          </div>
+                          <div className="text-purple-300 text-xs mt-1">
+                            {formatEventTime(event)}
+                          </div>
+                          {event.location && (
+                            <div className="text-white/60 text-xs mt-1 truncate">
+                              📍 {event.location}
+                            </div>
+                          )}
+                          {event.attendees && event.attendees.length > 1 && (
+                            <div className="text-white/60 text-xs mt-1">
+                              👥 {event.attendees.length} attendees
+                            </div>
+                          )}
+                        </div>
+                        {event.htmlLink && (
+                          <button
+                            onClick={() => {
+                              // Open in external browser via Electron
+                              console.log('Opening event in browser:', event.htmlLink)
+                            }}
+                            className="ml-2 px-2 py-1 bg-purple-500/30 hover:bg-purple-500/50 rounded text-xs text-white transition-colors"
+                          >
+                            Open
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* No events */}
+              {!isLoadingCalendar && calendarEvents.length === 0 && (
+                <div className="text-center text-white/60 py-8">
+                  <div className="text-4xl mb-3">📅</div>
+                  <div>No events found for {selectedCalendarRange === 'today' ? 'today' : selectedCalendarRange === 'week' ? 'this week' : 'next week'}</div>
+                  <div className="text-sm mt-2">Your schedule is clear!</div>
+                </div>
+              )}
               
               <div className="pt-2 border-t border-purple-500/10">
                 <button
@@ -883,6 +1039,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
               <div className={`w-2.5 h-2.5 rounded-full ${
                 isSyncing ? 'bg-orange-400' : 
                 isStreaming ? 'bg-blue-400' : 
+                isLoadingCalendar ? 'bg-purple-400' :
                 'bg-green-400'
               } animate-pulse`}></div>
             </div>
@@ -893,6 +1050,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
               </h1>
               <p className="text-white/50 text-xs">
                 {user ? `${user.displayName} • ${googleConnection.isConnected ? 'Google Services Connected' : 'Google Services Disconnected'}` : 'Not signed in'}
+                {currentMode === 'calendar' && calendarEvents.length > 0 && ` • ${calendarEvents.length} events`}
               </p>
             </div>
           </div>
@@ -912,13 +1070,18 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   💾
                 </button>
                 <button
-                  onClick={() => setCurrentMode('calendar')}
+                  onClick={() => {
+                    setCurrentMode('calendar')
+                    if (googleConnection.isConnected) {
+                      loadCalendarEvents(selectedCalendarRange)
+                    }
+                  }}
                   className={`p-2 border rounded-lg text-sm transition-colors ${
                     currentMode === 'calendar' 
                       ? 'bg-purple-500/30 border-purple-400/50' 
                       : 'bg-purple-500/10 border-purple-400/20 hover:bg-purple-500/20'
                   }`}
-                  title="Calendar mode"
+                  title="Calendar mode (⌘⇧C)"
                 >
                   📅
                 </button>
