@@ -4,6 +4,7 @@ import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile,
 import { AuthButton } from './components/AuthButton'
 import { MapVisualization } from './components/MapVisualization'
 import { PlacesList } from './components/PlacesList'
+import { AudioNotes } from './components/AudioNotes'
 
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
@@ -62,6 +63,9 @@ function App() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null)
   const [lastQueryWasLocation, setLastQueryWasLocation] = useState(false)
+  
+  // Audio Notes state
+  const [showAudioNotes, setShowAudioNotes] = useState(false)
   
   // Add state for sync stats
   const [syncStats, setSyncStats] = useState<any>(null)
@@ -842,6 +846,16 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         }
       }
       
+      // Cmd+Shift+A for System Audio Notes
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'A') {
+        e.preventDefault()
+        setShowAudioNotes(!showAudioNotes)
+        
+        if (window.electronAPI?.showWindow) {
+          window.electronAPI.showWindow()
+        }
+      }
+      
       // Cmd+Enter to cycle through modes (only if authenticated)
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
@@ -866,6 +880,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
       // Escape to return to chat
       if (e.key === 'Escape') {
         setCurrentMode('chat')
+        setShowAudioNotes(false)
       }
     }
 
@@ -1679,6 +1694,20 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                 >
                   📅
                 </button>
+                
+                {/* ADD THIS SYSTEM AUDIO BUTTON */}
+                <button
+                  onClick={() => setShowAudioNotes(!showAudioNotes)}
+                  className={`p-2 border rounded-lg text-sm transition-colors ${
+                    showAudioNotes 
+                      ? 'bg-orange-500/30 border-orange-400/50' 
+                      : 'bg-orange-500/10 border-orange-400/20 hover:bg-orange-500/20'
+                  }`}
+                  title="System Audio Notes (⌘⇧A)"
+                >
+                  🔊
+                </button>
+                
                 <button
                   onClick={() => setCurrentMode('maps')}
                   className={`p-2 border rounded-lg text-sm transition-colors ${
@@ -1733,13 +1762,24 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         {/* Mode shortcuts */}
         <div className="mt-2 text-center">
           <span className="text-white/30 text-xs">
-            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⌘⇧C Calendar • 🗺️ Maps • ⌘⇧P Profile • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
+            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⌘⇧C Calendar • ⌘⇧A Audio • 🗺️ Maps • ⌘⇧P Profile • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
           </span>
         </div>
       </div>
 
       {/* Mode Content */}
       {currentMode !== 'chat' && renderModeContent()}
+
+      {/* Audio Notes Interface */}
+      {showAudioNotes && (
+        <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+          <AudioNotes
+            user={user}
+            googleConnection={googleConnection}
+            className="w-full"
+          />
+        </div>
+      )}
 
       {/* Chat Messages */}
       {currentMode === 'chat' && (streamingText || isStreaming || currentResponse || places.length > 0) && (

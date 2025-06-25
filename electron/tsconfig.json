@@ -16,7 +16,12 @@
   "include": [
     "./**/*",
     "../src/database/**/*",
-    "../src/services/**/*"
+    "../src/services/auth/**/*",
+    "../src/services/drive/**/*",
+    "../src/services/vector/**/*",
+    "../src/services/organization/**/*",
+    "../src/services/calendar/**/*",
+    "../src/services/maps/**/*"
   ],
   "exclude": [
     "node_modules",
@@ -24,6 +29,8 @@
     "../dist-electron",
     "../src/components",
     "../src/App.tsx",
-    "../src/main.tsx"
+    "../src/main.tsx",
+    "../src/services/audio/**/*",
+    "../src/services/docs/**/*"
   ]
 }

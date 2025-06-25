@@ -231,6 +231,7 @@ function registerGlobalShortcuts() {
   const centerShortcut = 'Cmd+Shift+C'
   const screenshotShortcut = 'Cmd+Shift+S'
   const driveModeShortcut = 'Cmd+Shift+D'
+  const systemAudioShortcut = 'Cmd+Shift+A'
   
   try {
     console.log('Attempting to register global shortcuts...')
@@ -306,11 +307,35 @@ function registerGlobalShortcuts() {
     })
     console.log('Drive mode shortcut registration:', driveModeRegistered ? 'SUCCESS' : 'FAILED')
 
+    // Add keyboard shortcut for system audio toggle
+    const systemAudioRegistered = globalShortcut.register(systemAudioShortcut, () => {
+      console.log('🔊 System audio shortcut triggered')
+      if (mainWindow) {
+        // Send event to renderer to toggle system audio
+        mainWindow.webContents.send('toggle-system-audio')
+        
+        // Show and focus the window
+        if (!mainWindow.isVisible()) {
+          mainWindow.show()
+        }
+        if (!mainWindow.isFocused()) {
+          mainWindow.focus()
+        }
+        
+        // Bring to front on macOS
+        if (process.platform === 'darwin') {
+          app.focus({ steal: true })
+        }
+      }
+    })
+    console.log('System audio shortcut registration:', systemAudioRegistered ? 'SUCCESS' : 'FAILED')
+
     console.log('Global shortcuts registered successfully')
     console.log('- Cmd+Space: Toggle window')
     console.log('- Cmd+Shift+C: Center window')
     console.log('- Cmd+Shift+S: Quick screenshot analysis')
     console.log('- Cmd+Shift+D: Toggle drive mode')
+    console.log('- Cmd+Shift+A: Toggle system audio capture')
     console.log('- Cmd+Shift+T: Test shortcut')
   } catch (error) {
     console.error('Error registering shortcuts:', error)
@@ -1355,6 +1380,109 @@ ipcMain.handle('debug-api-key', async () => {
       vitePreview: process.env.VITE_GOOGLE_MAPS_API_KEY?.substring(0, 12) + '...',
       nodeEnv: process.env.NODE_ENV,
       allEnvKeys: Object.keys(process.env).filter(key => key.includes('GOOGLE') || key.includes('API'))
+    }
+  }
+})
+
+// System Audio handlers
+ipcMain.handle('audio-check-system-support', async () => {
+  try {
+    // System audio capture support is determined in renderer process
+    return { 
+      success: true, 
+      supported: true,
+      features: {
+        displayMedia: true,
+        systemAudio: true,
+        whisperTranscription: !!process.env.VITE_OPENAI_API_KEY
+      }
+    }
+  } catch (error) {
+    console.error('❌ System audio support check error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Support check failed' 
+    }
+  }
+})
+
+ipcMain.handle('audio-get-system-devices', async () => {
+  try {
+    // This needs to be handled in renderer process where navigator.mediaDevices is available
+    console.log('🔊 System audio devices requested')
+    return { 
+      success: true, 
+      message: 'Use renderer process for device enumeration'
+    }
+  } catch (error) {
+    console.error('❌ Get system devices error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Device enumeration failed' 
+    }
+  }
+})
+
+// Enhanced screen capture for audio
+ipcMain.handle('capture-screen-with-audio', async () => {
+  try {
+    console.log('🖥️ Screen capture with audio requested')
+    // This is handled in renderer process via getDisplayMedia
+    return { 
+      success: true,
+      message: 'Screen capture initiated in renderer process'
+    }
+  } catch (error) {
+    console.error('❌ Screen capture with audio error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Screen capture failed' 
+    }
+  }
+})
+
+// Audio session management
+ipcMain.handle('audio-start-system-session', async (event, options: { 
+  title: string
+  mode: 'system' | 'tab'
+}) => {
+  try {
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('🎤 Starting system audio session:', options)
+    
+    return { success: true, sessionId: Date.now().toString() }
+  } catch (error) {
+    console.error('❌ Start system audio session error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Session start failed' 
+    }
+  }
+})
+
+ipcMain.handle('audio-end-system-session', async (event, sessionData: {
+  sessionId: string
+  transcriptionCount: number
+  duration: number
+}) => {
+  try {
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('🛑 Ending system audio session:', sessionData.sessionId)
+    
+    return { success: true }
+  } catch (error) {
+    console.error('❌ End system audio session error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Session end failed' 
     }
   }
 })

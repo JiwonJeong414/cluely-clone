@@ -58,6 +58,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     moveFile: (fileId: string, folderId: string) => ipcRenderer.invoke('drive-move-file', fileId, folderId),
     organizeFiles: (plan: any) => ipcRenderer.invoke('drive-organize-files', plan),
     analyzeForOrganization: (options?: any) => ipcRenderer.invoke('drive-analyze-for-organization', options),
+    createDocumentFromAudioNote: (data: { title: string; content: string; folderId?: string }) => 
+      ipcRenderer.invoke('drive-create-document-from-audio-note', data),
+    appendToDocument: (documentId: string, text: string) => 
+      ipcRenderer.invoke('drive-append-to-document', documentId, text),
   },
 
   // Database operations
@@ -98,6 +102,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
         allEnvKeys: string[]
       }
     }>
+  },
+
+  // System Audio operations
+  audio: {
+    checkSystemSupport: () => Promise<boolean>,
+    getSystemDevices: () => Promise<any>,
+    startSystemSession: (options: { title: string; mode: 'system' | 'tab' }) => Promise<any>,
+    endSystemSession: (sessionData: { sessionId: string; transcriptionCount: number; duration: number }) => Promise<any>,
+    captureScreenWithAudio: () => Promise<any>
+  },
+
+  // Event listeners for system audio
+  onToggleSystemAudio: (callback: () => void) => {
+    ipcRenderer.on('toggle-system-audio', callback)
   },
 })
 
@@ -282,10 +300,12 @@ export interface ElectronAPI {
     listFiles: (options?: any) => Promise<{ success: boolean; files?: DriveFile[]; error?: string }>
     deleteFile: (fileId: string) => Promise<{ success: boolean; error?: string }>
     deleteFiles: (fileIds: string[]) => Promise<{ success: boolean; results?: any[]; summary?: any; error?: string }>
-    createFolder: (name: string) => Promise<{ success: boolean; folderId?: string; error?: string }>
+    createFolder: (name: string) => Promise<{ success: true; folderId: string } | { success: false; error: string }>
     moveFile: (fileId: string, folderId: string) => Promise<{ success: boolean; error?: string }>
     organizeFiles: (plan: any) => Promise<{ success: boolean; result?: any; error?: string }>
     analyzeForOrganization: (options?: any) => Promise<{ success: boolean; analysis?: any; error?: string }>
+    createDocumentFromAudioNote: (data: { title: string; content: string; folderId?: string }) => Promise<{ success: true; documentId: string } | { success: false; error: string }>
+    appendToDocument: (documentId: string, text: string) => Promise<{ success: boolean; error?: string }>
   }
 
   // Database
@@ -326,10 +346,52 @@ export interface ElectronAPI {
       }
     }>
   }
+
+  // System Audio operations
+  audio: {
+    checkSystemSupport: () => Promise<boolean>,
+    getSystemDevices: () => Promise<any>,
+    startSystemSession: (options: { title: string; mode: 'system' | 'tab' }) => Promise<any>,
+    endSystemSession: (sessionData: { sessionId: string; transcriptionCount: number; duration: number }) => Promise<any>,
+    captureScreenWithAudio: () => Promise<any>
+  },
+
+  // Event listeners for system audio
+  onToggleSystemAudio: (callback: () => void) => void
 }
 
 declare global {
   interface Window {
     electronAPI: ElectronAPI
   }
+}
+
+// System Audio operations  
+export interface SystemAudioSession {
+  sessionId: string
+  title: string
+  mode: 'system' | 'tab'
+  startTime: Date
+  transcriptionCount: number
+  duration: number
+}
+
+export interface AudioNote {
+  id: string
+  title: string
+  content: string
+  timestamp: Date
+  audioData?: Blob
+  transcriptions: Array<{
+    text: string
+    confidence: number
+    timestamp: Date
+    duration: number
+    source: 'system' | 'screen' | 'tab'
+  }>
+  source: 'system' | 'screen' | 'tab'
+}
+
+export interface SystemAudioNote extends AudioNote {
+  source: 'system' | 'screen' | 'tab'
 }

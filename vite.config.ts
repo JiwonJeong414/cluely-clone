@@ -43,11 +43,38 @@ export default defineConfig({
     'import.meta.env.VITE_OPENAI_API_KEY': JSON.stringify(process.env.VITE_OPENAI_API_KEY),
     // Add more explicit definitions if needed
     'import.meta.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+    // Polyfill global for browser compatibility
+    global: 'globalThis',
   },
   // This should make Vite pick up VITE_ prefixed variables automatically
   envPrefix: 'VITE_',
   // Ensure proper handling of Node.js modules in Electron
   optimizeDeps: {
-    exclude: ['electron'],
+    exclude: [
+      'electron',
+      'crypto',
+      'http',
+      'https',
+      'fs',
+      'path',
+      'os',
+      'util',
+      'stream',
+      'buffer',
+      'url',
+      'querystring',
+      'zlib',
+      'gcp-metadata',
+      'googleapis',
+      'google-auth-library'
+    ],
+    include: [
+      'react',
+      'react-dom'
+    ]
+  },
+  // Handle Node.js modules that shouldn't be bundled
+  ssr: {
+    noExternal: ['react', 'react-dom']
   },
 })
