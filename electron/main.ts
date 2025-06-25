@@ -1,6 +1,65 @@
-// electron/main.ts - Simplified version without service imports
-import { app, BrowserWindow, ipcMain, globalShortcut, screen, desktopCapturer } from 'electron'
-import { join } from 'path'
+// electron/main.ts - Fixed environment loading
+import dotenv from 'dotenv'
+import { resolve, join } from 'path'
+import { app } from 'electron'
+
+// Try multiple paths for .env file
+const envPaths = [
+  resolve(__dirname, '../.env'),           // Development
+  resolve(__dirname, '../../.env'),        // Built app
+  join(process.cwd(), '.env'),            // Current working directory
+  join(app.getAppPath(), '.env'),         // App path
+  join(app.getAppPath(), '../.env'),      // App parent path
+]
+
+console.log('🔍 Looking for .env file in these locations:')
+envPaths.forEach(path => console.log('  -', path))
+
+// Try to load .env from multiple locations
+let envLoaded = false
+for (const envPath of envPaths) {
+  try {
+    const result = dotenv.config({ path: envPath })
+    if (!result.error) {
+      console.log('✅ Successfully loaded .env from:', envPath)
+      envLoaded = true
+      break
+    }
+  } catch (error) {
+    // Continue to next path
+  }
+}
+
+if (!envLoaded) {
+  console.log('⚠️ No .env file found, using system environment variables only')
+}
+
+// Add debug logging for API key troubleshooting
+console.log('🔍 MAIN PROCESS DEBUG:')
+console.log('NODE_ENV:', process.env.NODE_ENV)
+console.log('Current working directory:', process.cwd())
+console.log('App path:', app.getAppPath())
+console.log('__dirname:', __dirname)
+console.log('GOOGLE_MAPS_API_KEY exists:', !!process.env.GOOGLE_MAPS_API_KEY)
+console.log('VITE_GOOGLE_MAPS_API_KEY exists:', !!process.env.VITE_GOOGLE_MAPS_API_KEY)
+
+// Show first 12 characters of API keys if they exist
+if (process.env.GOOGLE_MAPS_API_KEY) {
+  console.log('GOOGLE_MAPS_API_KEY preview:', process.env.GOOGLE_MAPS_API_KEY.substring(0, 12) + '...')
+}
+if (process.env.VITE_GOOGLE_MAPS_API_KEY) {
+  console.log('VITE_GOOGLE_MAPS_API_KEY preview:', process.env.VITE_GOOGLE_MAPS_API_KEY.substring(0, 12) + '...')
+}
+
+// List all environment variables that contain 'GOOGLE' or 'API'
+const relevantEnvVars = Object.keys(process.env).filter(key => 
+  key.includes('GOOGLE') || key.includes('API') || key.includes('MAPS')
+)
+console.log('🔑 Relevant environment variables found:', relevantEnvVars)
+
+// Now continue with your other imports...
+import { BrowserWindow, ipcMain, globalShortcut, screen, desktopCapturer } from 'electron'
+
 // Add back full service imports at the top
 import { DatabaseService } from '../src/database/DatabaseService'
 import { AuthService } from '../src/services/auth/AuthService'
@@ -8,9 +67,7 @@ import { DriveService } from '../src/services/drive/DriveService'
 import { VectorService } from '../src/services/vector/VectorService'
 import { OrganizationService } from '../src/services/organization/OrganizationService'
 import { CalendarService } from '../src/services/calendar/CalendarService'
-import dotenv from 'dotenv'
-
-dotenv.config()
+import { MapsService } from '../src/services/maps/MapsService'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -24,6 +81,7 @@ let driveService: DriveService
 let vectorService: VectorService
 let organizationService: OrganizationService
 let calendarService: CalendarService
+let mapsService: MapsService
 
 async function initializeServices() {
   try {
@@ -59,6 +117,10 @@ async function initializeServices() {
     // Initialize calendar service
     calendarService = CalendarService.getInstance()
     console.log('✅ Calendar service initialized')
+    
+    // Initialize maps service
+    mapsService = MapsService.getInstance()
+    console.log('✅ Maps service initialized')
     
     console.log('✅ All services initialized successfully')
   } catch (error) {
@@ -1069,6 +1131,230 @@ ipcMain.handle('calendar-get-context', async (event, query: string) => {
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to get calendar context' 
+    }
+  }
+})
+
+// Maps search handler
+ipcMain.handle('maps-search', async (event, query: string, options?: any) => {
+  try {
+    if (!mapsService) {
+      return { success: false, error: 'Maps service not available' }
+    }
+    
+    console.log(`🗺️ Searching maps for: "${query}"`)
+    
+    // Get location from renderer process if not provided
+    let location = options?.location
+    if (!location) {
+      try {
+        console.log('📍 Requesting location from renderer process...')
+        const locationResult = await event.sender.executeJavaScript(`
+          new Promise((resolve, reject) => {
+            console.log('🌍 Checking geolocation support...');
+            
+            if (!navigator.geolocation) {
+              console.error('❌ Geolocation not supported');
+              reject(new Error('Geolocation not supported'));
+              return;
+            }
+            
+            console.log('✅ Geolocation supported, requesting position...');
+            
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                console.log('✅ Location obtained:', position.coords);
+                resolve({ 
+                  lat: position.coords.latitude, 
+                  lng: position.coords.longitude 
+                });
+              },
+              (error) => {
+                console.error('❌ Geolocation error:', error);
+                console.error('Error code:', error.code);
+                console.error('Error message:', error.message);
+                
+                // Provide more specific error messages
+                let errorMessage = 'Failed to get location: ';
+                switch(error.code) {
+                  case 1: // PERMISSION_DENIED
+                    errorMessage += 'Location permission denied. Please enable location access in your browser settings.';
+                    break;
+                  case 2: // POSITION_UNAVAILABLE
+                    errorMessage += 'Location unavailable. Please check your GPS or internet connection.';
+                    break;
+                  case 3: // TIMEOUT
+                    errorMessage += 'Location request timed out. Please try again.';
+                    break;
+                  default:
+                    errorMessage += error.message;
+                }
+                
+                reject(new Error(errorMessage));
+              },
+              { 
+                enableHighAccuracy: true, 
+                timeout: 15000, // Increased timeout
+                maximumAge: 300000 // Allow cached location up to 5 minutes old
+              }
+            );
+          });
+        `)
+        
+        location = locationResult
+        console.log('📍 Got location from renderer:', location)
+      } catch (locationError) {
+        console.error('❌ Failed to get location:', locationError)
+        
+        // Return more helpful error message
+        return { 
+          success: false, 
+          error: `Location access required for maps search. ${locationError instanceof Error ? locationError.message : 'Please enable location access and try again.'}` 
+        }
+      }
+    }
+    
+    if (!location || !location.lat || !location.lng) {
+      return {
+        success: false,
+        error: 'Valid location coordinates are required for maps search'
+      }
+    }
+    
+    const searchOptions = { ...options, location }
+    const places = await mapsService.searchNearby(query, searchOptions)
+    
+    console.log(`✅ Found ${places.length} places`)
+    return { success: true, places }
+  } catch (error) {
+    console.error('❌ Maps search error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Maps search failed' 
+    }
+  }
+})
+
+// Also add a dedicated location handler for better debugging:
+ipcMain.handle('maps-get-location', async (event) => {
+  try {
+    console.log('📍 Getting location from renderer process...')
+    
+    const location = await event.sender.executeJavaScript(`
+      new Promise((resolve, reject) => {
+        console.log('🌍 Checking geolocation in renderer process...');
+        
+        if (!navigator.geolocation) {
+          console.error('❌ Geolocation not supported in this context');
+          reject(new Error('Geolocation not supported'));
+          return;
+        }
+        
+        console.log('✅ Requesting geolocation...');
+        
+        // First try to get cached position quickly
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            console.log('✅ Got location successfully:', {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy
+            });
+            resolve({ 
+              lat: position.coords.latitude, 
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy
+            });
+          },
+          (error) => {
+            console.error('❌ Geolocation failed in renderer:', {
+              code: error.code,
+              message: error.message
+            });
+            
+            let errorMessage = 'Location access failed: ';
+            switch(error.code) {
+              case 1:
+                errorMessage += 'Permission denied. Please allow location access and try again.';
+                break;
+              case 2:
+                errorMessage += 'Position unavailable. Check GPS/internet connection.';
+                break;
+              case 3:
+                errorMessage += 'Request timed out. Please try again.';
+                break;
+              default:
+                errorMessage += error.message || 'Unknown error';
+            }
+            
+            reject(new Error(errorMessage));
+          },
+          { 
+            enableHighAccuracy: false, // Try with lower accuracy first for speed
+            timeout: 10000,
+            maximumAge: 600000 // Allow cached location up to 10 minutes old
+          }
+        );
+      });
+    `)
+    
+    console.log('✅ Got location:', location)
+    return { success: true, location }
+  } catch (error) {
+    console.error('❌ Get location error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get location' 
+    }
+  }
+})
+
+// Get place details handler
+ipcMain.handle('maps-get-place-details', async (event, placeId: string) => {
+  try {
+    if (!mapsService) {
+      return { success: false, error: 'Maps service not available' }
+    }
+    
+    const place = await mapsService.getPlaceDetails(placeId)
+    return { success: true, place }
+  } catch (error) {
+    console.error('❌ Get place details error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get place details' 
+    }
+  }
+})
+
+// Travel time handler
+ipcMain.handle('maps-get-travel-time', async (event, origin: any, destination: any, mode?: 'driving' | 'walking' | 'transit') => {
+  try {
+    if (!mapsService) {
+      return { success: false, error: 'Maps service not available' }
+    }
+    
+    const travelInfo = await mapsService.getTravelTime(origin, destination, mode)
+    return { success: true, travelInfo }
+  } catch (error) {
+    console.error('❌ Get travel time error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get travel time' 
+    }
+  }
+})
+
+// Debug API key handler
+ipcMain.handle('debug-api-key', async () => {
+  return {
+    mainProcess: {
+      googleMapsKey: !!process.env.GOOGLE_MAPS_API_KEY,
+      viteKey: !!process.env.VITE_GOOGLE_MAPS_API_KEY,
+      googlePreview: process.env.GOOGLE_MAPS_API_KEY?.substring(0, 12) + '...',
+      vitePreview: process.env.VITE_GOOGLE_MAPS_API_KEY?.substring(0, 12) + '...',
+      nodeEnv: process.env.NODE_ENV,
+      allEnvKeys: Object.keys(process.env).filter(key => key.includes('GOOGLE') || key.includes('API'))
     }
   }
 })

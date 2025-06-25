@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { initializeOpenAI, getOpenAI, type ChatMessage } from './api/openai'
-import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, CalendarAnalysis, CalendarInsight } from '../electron/preload'
+import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, Place } from '../electron/preload'
 import { AuthButton } from './components/AuthButton'
+import { MapVisualization } from './components/MapVisualization'
+import { PlacesList } from './components/PlacesList'
 
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
@@ -21,7 +23,7 @@ interface Message {
   calendarContext?: string
 }
 
-type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar' | 'profile'
+type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar' | 'profile' | 'maps'
 type CalendarRange = 'today' | 'week' | 'next-week'
 
 function App() {
@@ -43,10 +45,9 @@ function App() {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
   const [cleanupCandidates, setCleanupCandidates] = useState<CleanupCandidate[]>([])
   const [organizationClusters, setOrganizationClusters] = useState<OrganizationCluster[]>([])
-  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([])
-  const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
   
   // Calendar state
@@ -54,6 +55,13 @@ function App() {
   const [calendarContext, setCalendarContext] = useState<string>('')
   const [selectedCalendarRange, setSelectedCalendarRange] = useState<CalendarRange>('today')
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(false)
+  
+  // Maps state
+  const [places, setPlaces] = useState<Place[]>([])
+  const [isSearchingMaps, setIsSearchingMaps] = useState(false)
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null)
+  const [lastQueryWasLocation, setLastQueryWasLocation] = useState(false)
   
   // Add state for sync stats
   const [syncStats, setSyncStats] = useState<any>(null)
@@ -294,22 +302,28 @@ function App() {
 
   // Search Drive documents - FIXED
   const handleDriveSearch = async (query: string) => {
-    if (!window.electronAPI?.drive || !user || !googleConnection.isConnected) {
-      console.warn('Drive search skipped: not connected')
-      await sendMessage(query) // Fallback to regular chat
+    const isCalendar = isCalendarQuery(query)
+    const isLocation = isLocationQuery(query)
+
+    // Only clear map state if this is NOT a location query
+    if (!isLocation) {
+      setLastQueryWasLocation(false)
+      setPlaces([])
+    }
+
+    if (!user || !googleConnection.isConnected) {
+      await sendMessage(query)
       return
     }
 
     try {
       console.log('🔍 Starting integrated search for:', query)
-      
-      // Check if it's a calendar-related query
-      const isCalendar = isCalendarQuery(query)
-      
+      setLastQueryWasLocation(isLocation)
       let calendarCtx = ''
       let driveResults = null
+      let locationResults = null
       
-      // Get calendar context if it's a calendar query
+      // Get calendar context if needed
       if (isCalendar && window.electronAPI?.calendar) {
         try {
           calendarCtx = await getCalendarContextForAI(query)
@@ -319,27 +333,78 @@ function App() {
         }
       }
       
-      // Search Drive for context
-      try {
-        const driveResult = await window.electronAPI.drive.search(query, 5)
-        if (driveResult.success && driveResult.results) {
-          driveResults = driveResult.results
-          setSearchResults(driveResults)
-          console.log(`📄 Found ${driveResults.length} relevant documents`)
-        } else {
-          console.warn('Drive search returned no results:', driveResult.error)
-          setSearchResults([])
+      // Search maps if location query
+      if (isLocation && window.electronAPI?.maps) {
+        try {
+          setIsSearchingMaps(true)
+          
+          // Get user location first if we don't have it
+          if (!userLocation) {
+            const location = await requestLocationPermission()
+            if (location) {
+              setUserLocation(location)
+            }
+          }
+          
+          const mapsResult = await window.electronAPI.maps.search(query)
+          if (mapsResult.success && mapsResult.places) {
+            locationResults = mapsResult.places
+            setPlaces(locationResults)
+            console.log(`🗺️ Found ${locationResults.length} places`)
+            // Do NOT switch to maps mode; just show map inline in chat
+            // If this is PURELY a location query (no calendar context), don't search Drive
+            if (!isCalendar) {
+              // Build a short location-only context message
+              let contextualMessage = "Nearby places:\n"
+              if (locationResults && locationResults.length > 0) {
+                const locationContext = locationResults
+                  .slice(0, 3)
+                  .map(place => `${place.name} - ${place.address}`)
+                  .join('\n')
+                contextualMessage += locationContext
+              } else {
+                contextualMessage += "No results found."
+              }
+              contextualMessage += "\n\nPlease answer in 3-4 short sentences."
+              await sendMessage(contextualMessage, undefined, undefined, '')
+              return // EARLY RETURN - don't search Drive for pure location queries
+            }
+          }
+        } catch (error) {
+          console.error('Maps search failed:', error)
+        } finally {
+          setIsSearchingMaps(false)
         }
-      } catch (error) {
-        console.error('Drive search failed:', error)
-        setSearchResults([])
       }
       
-      // Build comprehensive context message
+      // Continue with existing Drive and Calendar search logic...
+      // Only search Drive if it's NOT a pure location query OR if we also need calendar context
+      if (!isLocation || isCalendar) {
+        try {
+          const driveResult = await window.electronAPI.drive.search(query, 5)
+          if (driveResult.success && driveResult.results) {
+            driveResults = driveResult.results
+            setSearchResults(driveResults)
+          }
+        } catch (error) {
+          console.error('Drive search failed:', error)
+          setSearchResults([])
+        }
+      }
+      
+      // Build comprehensive context message for calendar + drive queries
       let contextualMessage = query
       
       if (calendarCtx) {
         contextualMessage = `${calendarCtx}\n\nUser question: ${query}`
+      }
+      
+      if (locationResults && locationResults.length > 0) {
+        const locationContext = locationResults
+          .map(place => `${place.name} - ${place.address} (${place.distance}, ${place.duration}) Rating: ${place.rating}/5`)
+          .join('\n')
+        
+        contextualMessage += `\n\nNearby places:\n${locationContext}`
       }
       
       if (driveResults && driveResults.length > 0) {
@@ -347,19 +412,16 @@ function App() {
           .map(r => `Document: ${r.fileName}\nContent: ${r.content.substring(0, 300)}...`)
           .join('\n\n')
         
-        if (calendarCtx) {
-          contextualMessage += `\n\nRelevant documents from Google Drive:\n${driveContextText}`
-        } else {
-          contextualMessage = `Based on your Google Drive documents:\n\n${driveContextText}\n\nUser question: ${query}`
-        }
+        contextualMessage += `\n\nRelevant documents:\n${driveContextText}`
       }
       
       // Send to AI with all context
       await sendMessage(contextualMessage, undefined, driveResults || undefined, calendarCtx)
     } catch (error) {
       console.error('Error in integrated search:', error)
-      // Fallback to regular message
       await sendMessage(query)
+      setLastQueryWasLocation(false)
+      setPlaces([])
     }
   }
 
@@ -431,6 +493,25 @@ function App() {
     return calendarKeywords.some(keyword => lowerQuery.includes(keyword))
   }
 
+  const isLocationQuery = (query: string): boolean => {
+    const locationKeywords = [
+      'near me', 'nearby', 'closest', 'nearest', 'around here', 'close to me',
+      'restaurant', 'coffee', 'cafe', 'gas station', 'hospital', 'pharmacy',
+      'store', 'shop', 'bank', 'atm', 'hotel', 'parking', 'grocery',
+      'directions to', 'how to get to', 'drive to', 'walk to', 'navigate to',
+      'find a', 'where is the', 'location of', 'address of'
+    ]
+    
+    const lowerQuery = query.toLowerCase()
+    
+    // Must contain a location keyword AND not be asking about documents/calendar
+    const hasLocationKeyword = locationKeywords.some(keyword => lowerQuery.includes(keyword))
+    const isNotDocumentQuery = !lowerQuery.includes('document') && !lowerQuery.includes('file') && !lowerQuery.includes('drive')
+    const isNotCalendarQuery = !lowerQuery.includes('meeting') && !lowerQuery.includes('schedule') && !lowerQuery.includes('calendar')
+    
+    return hasLocationKeyword && isNotDocumentQuery && isNotCalendarQuery
+  }
+
   const getCalendarContextForAI = async (query: string): Promise<string> => {
     if (!window.electronAPI?.calendar || !user) return ''
     
@@ -464,6 +545,87 @@ function App() {
     }
     
     return `${formatTime(start)} - ${formatTime(end)}`
+  }
+
+  // Location permission helper
+  const requestLocationPermission = async (): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      console.log('🌍 Requesting location permission...')
+      
+      // First check if geolocation is supported
+      if (!navigator.geolocation) {
+        console.error('❌ Geolocation not supported')
+        alert('Geolocation is not supported by this browser')
+        return null
+      }
+      
+      // Check current permission state if available
+      if ('permissions' in navigator) {
+        try {
+          const permission = await navigator.permissions.query({ name: 'geolocation' })
+          console.log('📍 Current location permission state:', permission.state)
+          
+          if (permission.state === 'denied') {
+            alert('Location access is blocked. Please enable it in your browser settings and refresh the page.')
+            return null
+          }
+        } catch (permError) {
+          console.warn('Could not check permission state:', permError)
+        }
+      }
+      
+      // Request location
+      return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Location request timed out'))
+        }, 15000)
+        
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            clearTimeout(timeoutId)
+            console.log('✅ Location obtained:', {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy
+            })
+            resolve({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            })
+          },
+          (error) => {
+            clearTimeout(timeoutId)
+            console.error('❌ Location error:', error)
+            
+            let message = 'Failed to get your location: '
+            switch (error.code) {
+              case error.PERMISSION_DENIED:
+                message += 'Permission denied. Please allow location access and try again.'
+                break
+              case error.POSITION_UNAVAILABLE:
+                message += 'Location unavailable. Please check your GPS or internet connection.'
+                break
+              case error.TIMEOUT:
+                message += 'Request timed out. Please try again.'
+                break
+              default:
+                message += error.message || 'Unknown error occurred'
+            }
+            
+            alert(message)
+            reject(new Error(message))
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 300000 // 5 minutes
+          }
+        )
+      })
+    } catch (error) {
+      console.error('❌ Location permission error:', error)
+      return null
+    }
   }
 
   // Add smart suggestions based on calendar context
@@ -1254,6 +1416,153 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   Sign Out
                 </button>
               </div>
+
+              {/* Location Test */}
+              <div className="pt-3 border-t border-green-500/10">
+                <button
+                  onClick={async () => {
+                    const location = await requestLocationPermission()
+                    if (location) {
+                      console.log('✅ Location test successful:', location)
+                      alert(`Location: ${location.lat}, ${location.lng}`)
+                    } else {
+                      console.log('❌ Location test failed')
+                      alert('Location test failed')
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded-lg text-white text-sm transition-colors font-medium"
+                >
+                  🌍 Test Location
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'maps':
+        return (
+          <div className="space-y-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* Maps Header */}
+            <div className="px-4 pt-4 pb-0">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-white font-medium">Maps & Locations</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      const location = await requestLocationPermission()
+                      if (location) {
+                        setUserLocation(location)
+                      }
+                    }}
+                    className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs rounded transition-colors"
+                    title="Update location"
+                  >
+                    📍 Locate
+                  </button>
+                  <button
+                    onClick={() => setCurrentMode('chat')}
+                    className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs rounded transition-colors"
+                  >
+                    Search
+                  </button>
+                </div>
+              </div>
+
+              {/* Location Status */}
+              <div className={`text-xs px-3 py-2 rounded-lg border mb-3 ${
+                userLocation 
+                  ? 'bg-green-500/10 border-green-400/20 text-green-300'
+                  : 'bg-yellow-500/10 border-yellow-400/20 text-yellow-300'
+              }`}>
+                {userLocation 
+                  ? `📍 Location: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`
+                  : '📍 Location access needed for accurate results'
+                }
+              </div>
+            </div>
+
+            {/* Map Visualization */}
+            <div className="px-4">
+              <MapVisualization
+                places={places}
+                isSearching={isSearchingMaps}
+                userLocation={userLocation || undefined}
+                className="mb-4"
+                style={{ height: 250, maxHeight: 300 }}
+              />
+            </div>
+
+            {/* Compact Places List */}
+            <div className="px-4 pb-4">
+              <PlacesList
+                places={places}
+                onPlaceSelect={(place: Place) => {
+                  setSelectedPlace(place)
+                  // Optionally switch to chat mode to ask about this place
+                  console.log('Selected place:', place.name)
+                }}
+              />
+              
+              {places.length === 0 && !isSearchingMaps && (
+                <div className="text-center text-white/60 py-8">
+                  <div className="text-4xl mb-3">🗺️</div>
+                  <div>No places found</div>
+                  <div className="text-sm mt-2">
+                    Try asking "coffee shops near me" in chat mode
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Actions */}
+            <div className="px-4 pb-4">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setInputValue("restaurants near me")
+                    setCurrentMode('chat')
+                  }}
+                  className="p-3 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  🍽️ Restaurants
+                </button>
+                <button
+                  onClick={() => {
+                    setInputValue("coffee shops near me")
+                    setCurrentMode('chat')
+                  }}
+                  className="p-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  ☕ Coffee
+                </button>
+                <button
+                  onClick={() => {
+                    setInputValue("gas stations near me")
+                    setCurrentMode('chat')
+                  }}
+                  className="p-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  ⛽ Gas
+                </button>
+                <button
+                  onClick={() => {
+                    setInputValue("pharmacies near me")
+                    setCurrentMode('chat')
+                  }}
+                  className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  💊 Pharmacy
+                </button>
+              </div>
+            </div>
+
+            {/* Tips */}
+            <div className="px-4 pb-4">
+              <div className="text-xs text-white/40 space-y-1">
+                <div>💡 <strong>Click markers</strong> on the map for details</div>
+                <div>🔍 <strong>Search in chat:</strong> "coffee shops near me"</div>
+                <div>📍 <strong>Enable location</strong> for accurate distances</div>
+              </div>
             </div>
           </div>
         )
@@ -1371,6 +1680,17 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   📅
                 </button>
                 <button
+                  onClick={() => setCurrentMode('maps')}
+                  className={`p-2 border rounded-lg text-sm transition-colors ${
+                    currentMode === 'maps' 
+                      ? 'bg-green-500/30 border-green-400/50' 
+                      : 'bg-green-500/10 border-green-400/20 hover:bg-green-500/20'
+                  }`}
+                  title="Maps mode"
+                >
+                  🗺️
+                </button>
+                <button
                   onClick={() => setCurrentMode('profile')}
                   className={`p-2 border rounded-lg text-sm transition-colors ${
                     currentMode === 'profile' 
@@ -1413,7 +1733,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         {/* Mode shortcuts */}
         <div className="mt-2 text-center">
           <span className="text-white/30 text-xs">
-            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⌘⇧C Calendar • ⌘⇧P Profile • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
+            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⌘⇧C Calendar • 🗺️ Maps • ⌘⇧P Profile • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
           </span>
         </div>
       </div>
@@ -1422,7 +1742,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
       {currentMode !== 'chat' && renderModeContent()}
 
       {/* Chat Messages */}
-      {currentMode === 'chat' && (streamingText || isStreaming || currentResponse) && (
+      {currentMode === 'chat' && (streamingText || isStreaming || currentResponse || places.length > 0) && (
         <div className="px-6 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar">
           {(streamingText || isStreaming) && (
             <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4">
@@ -1474,6 +1794,24 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   </div>
                 </div>
               )}
+            </div>
+          )}
+          {/* Always show MapVisualization and PlacesList if places exist */}
+          {places.length > 0 && (
+            <div className="mt-6">
+              <MapVisualization
+                places={places}
+                isSearching={isSearchingMaps}
+                userLocation={userLocation || undefined}
+                className="mb-4"
+              />
+              <PlacesList
+                places={places}
+                onPlaceSelect={(place: Place) => {
+                  setSelectedPlace(place)
+                  // Optionally, you could set inputValue and switch to chat for more info
+                }}
+              />
             </div>
           )}
         </div>

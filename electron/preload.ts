@@ -76,6 +76,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
     analyze: (query: string) => ipcRenderer.invoke('calendar-analyze', query),
     getContext: (query: string) => ipcRenderer.invoke('calendar-get-context', query),
   },
+
+  // Maps operations
+  maps: {
+    search: (query: string, options?: any) => ipcRenderer.invoke('maps-search', query, options),
+    getLocation: () => ipcRenderer.invoke('maps-get-location'),
+    getPlaceDetails: (placeId: string) => ipcRenderer.invoke('maps-get-place-details', placeId),
+    getTravelTime: (origin: any, destination: any, mode?: 'driving' | 'walking' | 'transit') => 
+      ipcRenderer.invoke('maps-get-travel-time', origin, destination, mode),
+  },
+
+  // Debug operations
+  debug: {
+    apiKey: () => Promise<{
+      mainProcess: {
+        googleMapsKey: boolean
+        viteKey: boolean
+        googlePreview?: string
+        vitePreview?: string
+        nodeEnv?: string
+        allEnvKeys: string[]
+      }
+    }>
+  },
 })
 
 // Type definitions
@@ -208,6 +231,21 @@ export interface CalendarAnalysis {
   summary: string
 }
 
+export interface Place {
+  placeId: string
+  name: string
+  address: string
+  rating?: number
+  priceLevel?: number
+  types: string[]
+  location: { lat: number; lng: number }
+  phoneNumber?: string
+  website?: string
+  openingHours?: string[]
+  distance?: string
+  duration?: string
+}
+
 export interface ElectronAPI {
   // Existing
   getAppVersion: () => Promise<string>
@@ -265,6 +303,28 @@ export interface ElectronAPI {
     getNextWeek: () => Promise<{ success: boolean; events?: CalendarEvent[]; error?: string }>
     analyze: (query: string) => Promise<{ success: boolean; analysis?: CalendarAnalysis; error?: string }>
     getContext: (query: string) => Promise<{ success: boolean; context?: string; error?: string }>
+  }
+
+  // Maps
+  maps: {
+    search: (query: string, options?: any) => Promise<{ success: boolean; places?: Place[]; error?: string }>
+    getLocation: () => Promise<{ success: boolean; location?: { lat: number; lng: number }; error?: string }>
+    getPlaceDetails: (placeId: string) => Promise<{ success: boolean; place?: Place; error?: string }>
+    getTravelTime: (origin: any, destination: any, mode?: 'driving' | 'walking' | 'transit') => Promise<{ success: boolean; travelInfo?: { distance: string; duration: string }; error?: string }>
+  }
+
+  // Debug operations
+  debug: {
+    apiKey: () => Promise<{
+      mainProcess: {
+        googleMapsKey: boolean
+        viteKey: boolean
+        googlePreview?: string
+        vitePreview?: string
+        nodeEnv?: string
+        allEnvKeys: string[]
+      }
+    }>
   }
 }
 
