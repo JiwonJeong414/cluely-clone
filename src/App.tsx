@@ -192,23 +192,6 @@ function App() {
     }
   }, [currentMode])
 
-  // Debug API key function
-  const testAPIKey = async () => {
-    if (window.electronAPI) {
-      try {
-        const result = await window.electronAPI.debug.apiKey()
-        console.log('🔍 Main Process Debug:', result)
-      } catch (error) {
-        console.error('Debug failed:', error)
-      }
-    }
-  }
-
-  // Test API key on component mount
-  useEffect(() => {
-    testAPIKey()
-  }, [])
-
   // Update dimensions when content changes
   const updateDimensions = useCallback(() => {
     if (contentRef.current && window.electronAPI?.updateContentDimensions) {
