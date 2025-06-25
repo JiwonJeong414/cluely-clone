@@ -42,6 +42,8 @@ console.log('App path:', app.getAppPath())
 console.log('__dirname:', __dirname)
 console.log('GOOGLE_MAPS_API_KEY exists:', !!process.env.GOOGLE_MAPS_API_KEY)
 console.log('VITE_GOOGLE_MAPS_API_KEY exists:', !!process.env.VITE_GOOGLE_MAPS_API_KEY)
+console.log('OPENAI_API_KEY exists:', !!process.env.OPENAI_API_KEY)
+console.log('VITE_OPENAI_API_KEY exists:', !!process.env.VITE_OPENAI_API_KEY)
 
 // Show first 12 characters of API keys if they exist
 if (process.env.GOOGLE_MAPS_API_KEY) {
@@ -50,10 +52,16 @@ if (process.env.GOOGLE_MAPS_API_KEY) {
 if (process.env.VITE_GOOGLE_MAPS_API_KEY) {
   console.log('VITE_GOOGLE_MAPS_API_KEY preview:', process.env.VITE_GOOGLE_MAPS_API_KEY.substring(0, 12) + '...')
 }
+if (process.env.OPENAI_API_KEY) {
+  console.log('OPENAI_API_KEY preview:', process.env.OPENAI_API_KEY.substring(0, 12) + '...')
+}
+if (process.env.VITE_OPENAI_API_KEY) {
+  console.log('VITE_OPENAI_API_KEY preview:', process.env.VITE_OPENAI_API_KEY.substring(0, 12) + '...')
+}
 
 // List all environment variables that contain 'GOOGLE' or 'API'
 const relevantEnvVars = Object.keys(process.env).filter(key => 
-  key.includes('GOOGLE') || key.includes('API') || key.includes('MAPS')
+  key.includes('GOOGLE') || key.includes('API') || key.includes('MAPS') || key.includes('OPENAI')
 )
 console.log('🔑 Relevant environment variables found:', relevantEnvVars)
 
@@ -68,6 +76,7 @@ import { VectorService } from '../src/services/vector/VectorService'
 import { OrganizationService } from '../src/services/organization/OrganizationService'
 import { CalendarService } from '../src/services/calendar/CalendarService'
 import { MapsService } from '../src/services/maps/MapsService'
+import { AudioService } from '../src/services/audio/AudioService'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -82,6 +91,14 @@ let vectorService: VectorService
 let organizationService: OrganizationService
 let calendarService: CalendarService
 let mapsService: MapsService
+let audioService: AudioService
+
+// Check OpenAI API key availability
+if (process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY) {
+  console.log('✅ OpenAI API key found, audio processing will be available')
+} else {
+  console.log('⚠️ OPENAI_API_KEY not found, audio processing will be limited')
+}
 
 async function initializeServices() {
   try {
@@ -121,6 +138,10 @@ async function initializeServices() {
     // Initialize maps service
     mapsService = MapsService.getInstance()
     console.log('✅ Maps service initialized')
+    
+    // Initialize audio service
+    audioService = AudioService.getInstance()
+    console.log('✅ Audio service initialized')
     
     console.log('✅ All services initialized successfully')
   } catch (error) {
@@ -184,6 +205,11 @@ function createWindow() {
 
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('Window content loaded')
+    
+    // Set the main window reference in the audio service
+    if (audioService) {
+      audioService.setMainWindow(mainWindow!)
+    }
   })
 }
 
@@ -1357,4 +1383,133 @@ ipcMain.handle('debug-api-key', async () => {
       allEnvKeys: Object.keys(process.env).filter(key => key.includes('GOOGLE') || key.includes('API'))
     }
   }
+})
+
+// OpenAI Audio Processing Handlers
+ipcMain.handle('analyze-audio-base64', async (event, data: string, mimeType: string) => {
+  try {
+    if (!audioService) {
+      return { success: false, error: 'Audio service not available' }
+    }
+
+    console.log('🎵 Analyzing audio with OpenAI...')
+    const result = await audioService.analyzeAudioFromBase64(data, mimeType)
+    
+    console.log('✅ Audio analysis completed successfully')
+    return result
+  } catch (error) {
+    console.error('❌ Audio analysis error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to analyze audio' 
+    }
+  }
+})
+
+ipcMain.handle('analyze-audio-file', async (event, path: string) => {
+  try {
+    if (!audioService) {
+      return { success: false, error: 'Audio service not available' }
+    }
+
+    console.log('🎵 Analyzing audio file with OpenAI...')
+    
+    const fs = require('fs')
+    const audioData = await fs.promises.readFile(path)
+    const base64Data = audioData.toString('base64')
+    
+    const result = await audioService.analyzeAudioFromBase64(base64Data, 'audio/mp3')
+    
+    console.log('✅ Audio file analysis completed successfully')
+    return result
+  } catch (error) {
+    console.error('❌ Audio file analysis error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to analyze audio file' 
+    }
+  }
+})
+
+// Audio capture handlers
+ipcMain.handle('audio-start-capture', async (event, options = {}) => {
+  try {
+    if (!audioService) {
+      return { success: false, error: 'Audio service not available' }
+    }
+
+    console.log('🎤 Starting audio capture...')
+    const result = await audioService.startAudioCapture(options)
+    
+    if (result.success) {
+      console.log('✅ Audio capture started successfully')
+    } else {
+      console.error('❌ Failed to start audio capture:', result.error)
+    }
+    
+    return result
+  } catch (error) {
+    console.error('❌ Audio start capture error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to start audio capture' 
+    }
+  }
+})
+
+ipcMain.handle('audio-stop-capture', async () => {
+  try {
+    if (!audioService) {
+      return { success: false, error: 'Audio service not available' }
+    }
+
+    console.log('🛑 Stopping audio capture...')
+    const result = await audioService.stopAudioCapture()
+    
+    if (result.success) {
+      console.log('✅ Audio capture stopped successfully')
+    } else {
+      console.error('❌ Failed to stop audio capture:', result.error)
+    }
+    
+    return result
+  } catch (error) {
+    console.error('❌ Audio stop capture error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to stop audio capture' 
+    }
+  }
+})
+
+ipcMain.handle('audio-process-for-interview', async (event, audioData: ArrayBuffer) => {
+  try {
+    if (!audioService) {
+      return { success: false, error: 'Audio service not available' }
+    }
+
+    console.log('🎯 Processing audio for interview assistance...')
+    const result = await audioService.processAudioForInterview(audioData)
+    
+    if (result.success) {
+      console.log('✅ Audio processed successfully for interview')
+    } else {
+      console.error('❌ Failed to process audio:', result.error)
+    }
+    
+    return result
+  } catch (error) {
+    console.error('❌ Audio process error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to process audio' 
+    }
+  }
+})
+
+ipcMain.handle('audio-is-capturing', () => {
+  if (!audioService) {
+    return false
+  }
+  return audioService.isCapturingAudio()
 })

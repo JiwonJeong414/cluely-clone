@@ -86,6 +86,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('maps-get-travel-time', origin, destination, mode),
   },
 
+  // Audio operations
+  audio: {
+    startCapture: (options?: { duration?: number; sampleRate?: number; channels?: number }) => 
+      ipcRenderer.invoke('audio-start-capture', options),
+    stopCapture: () => ipcRenderer.invoke('audio-stop-capture'),
+    processForInterview: (audioData: ArrayBuffer) => ipcRenderer.invoke('audio-process-for-interview', audioData),
+    isCapturing: () => ipcRenderer.invoke('audio-is-capturing'),
+    analyzeFromBase64: (data: string, mimeType: string) => ipcRenderer.invoke('analyze-audio-base64', data, mimeType),
+    analyzeFile: (path: string) => ipcRenderer.invoke('analyze-audio-file', path),
+  },
+
   // Debug operations
   debug: {
     apiKey: () => Promise<{
@@ -311,6 +322,19 @@ export interface ElectronAPI {
     getLocation: () => Promise<{ success: boolean; location?: { lat: number; lng: number }; error?: string }>
     getPlaceDetails: (placeId: string) => Promise<{ success: boolean; place?: Place; error?: string }>
     getTravelTime: (origin: any, destination: any, mode?: 'driving' | 'walking' | 'transit') => Promise<{ success: boolean; travelInfo?: { distance: string; duration: string }; error?: string }>
+  }
+
+  // Audio
+  audio: {
+    startCapture: (options?: { duration?: number; sampleRate?: number; channels?: number }) => 
+      Promise<{ success: boolean; audioData?: ArrayBuffer; error?: string; duration?: number }>
+    stopCapture: () => 
+      Promise<{ success: boolean; audioData?: ArrayBuffer; error?: string; duration?: number }>
+    processForInterview: (audioData: ArrayBuffer) => 
+      Promise<{ success: boolean; response?: string; error?: string }>
+    isCapturing: () => Promise<boolean>
+    analyzeFromBase64: (data: string, mimeType: string) => Promise<{ text: string; timestamp: number } | { success: false; error: string }>
+    analyzeFile: (path: string) => Promise<{ text: string; timestamp: number } | { success: false; error: string }>
   }
 
   // Debug operations

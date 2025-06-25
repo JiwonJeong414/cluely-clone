@@ -4,6 +4,7 @@ import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile,
 import { AuthButton } from './components/AuthButton'
 import { MapVisualization } from './components/MapVisualization'
 import { PlacesList } from './components/PlacesList'
+import { AudioButton } from './components/AudioButton'
 
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
@@ -767,15 +768,25 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
   // Handle input submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const query = inputValue.trim()
-    if (!query || isLoading || isStreaming) return
+    if (!inputValue.trim() || isLoading || isStreaming) return
+    
+    const message = inputValue.trim()
+    setInputValue('')
+    await sendMessage(message)
+  }
 
-    // If we have Google connection, search Drive first
-    if (googleConnection.isConnected && currentMode === 'chat') {
-      await handleDriveSearch(query)
-    } else {
-      await sendMessage(query)
+  const handleAudioProcessed = async (response: string) => {
+    // Add the audio response as an assistant message
+    const audioMessage: Message = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: response,
+      timestamp: new Date()
     }
+    
+    setCurrentResponse(audioMessage)
+    setStreamingText('')
+    setIsStreaming(false)
   }
 
   useEffect(() => {
@@ -1716,17 +1727,23 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit(e))}
               placeholder={googleConnection.isConnected ? "Ask about your Drive, calendar, or anything..." : "Type a message..."}
-              className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-20 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
+              className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-32 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
               disabled={isLoading || isStreaming}
               autoFocus
             />
-            <button
-              onClick={handleSubmit}
-              disabled={!inputValue.trim() || isLoading || isStreaming}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
-            >
-              {isLoading ? '...' : 'Send'}
-            </button>
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
+              <AudioButton 
+                onAudioProcessed={handleAudioProcessed}
+                className="flex-shrink-0"
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={!inputValue.trim() || isLoading || isStreaming}
+                className="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
+              >
+                {isLoading ? '...' : 'Send'}
+              </button>
+            </div>
           </div>
         )}
 
