@@ -39,7 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getUser: () => ipcRenderer.invoke('auth-get-user'),
     signIn: () => ipcRenderer.invoke('auth-sign-in'),
     signOut: () => ipcRenderer.invoke('auth-sign-out'),
-    getDriveConnection: () => ipcRenderer.invoke('auth-get-drive-connection'),
+    getGoogleConnection: () => ipcRenderer.invoke('auth-get-google-connection'),
   },
 
   // Drive operations
@@ -60,6 +60,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getIndexedFiles: () => ipcRenderer.invoke('db-get-indexed-files'),
     getCleanupCandidates: (maxFiles?: number) => ipcRenderer.invoke('db-get-cleanup-candidates', maxFiles),
   },
+
+  // Calendar operations
+  calendar: {
+    getEvents: (timeRange?: { start?: string, end?: string }) => 
+      ipcRenderer.invoke('calendar-get-events', timeRange),
+    getToday: () => ipcRenderer.invoke('calendar-get-today'),
+    getWeek: () => ipcRenderer.invoke('calendar-get-week'),
+    getNextWeek: () => ipcRenderer.invoke('calendar-get-next-week'),
+    analyze: (query: string) => ipcRenderer.invoke('calendar-analyze', query),
+    getContext: (query: string) => ipcRenderer.invoke('calendar-get-context', query),
+  },
 })
 
 // Type definitions
@@ -71,7 +82,7 @@ export interface User {
   photoURL?: string
 }
 
-export interface DriveConnection {
+export interface GoogleConnection {
   isConnected: boolean
   accessToken?: string
   refreshToken?: string
@@ -134,6 +145,59 @@ export interface ScreenSource {
   display_id: string
 }
 
+export interface CalendarEvent {
+  id: string
+  summary: string
+  description?: string
+  start: {
+    dateTime?: string
+    date?: string
+    timeZone?: string
+  }
+  end: {
+    dateTime?: string
+    date?: string
+    timeZone?: string
+  }
+  location?: string
+  attendees?: Array<{
+    email: string
+    displayName?: string
+    responseStatus: 'needsAction' | 'declined' | 'tentative' | 'accepted'
+  }>
+  status: 'confirmed' | 'tentative' | 'cancelled'
+  creator?: {
+    email: string
+    displayName?: string
+  }
+  organizer?: {
+    email: string
+    displayName?: string
+  }
+  htmlLink?: string
+  conferenceData?: {
+    entryPoints?: Array<{
+      entryPointType: string
+      uri: string
+      label?: string
+    }>
+  }
+}
+
+export interface CalendarInsight {
+  type: 'upcoming_busy_period' | 'free_time' | 'travel_time' | 'meeting_prep' | 'conflict'
+  message: string
+  events: CalendarEvent[]
+  priority: 'low' | 'medium' | 'high'
+  actionable?: boolean
+}
+
+export interface CalendarAnalysis {
+  events: CalendarEvent[]
+  insights: CalendarInsight[]
+  summary: string
+}
+
 export interface ElectronAPI {
   // Existing
   getAppVersion: () => Promise<string>
@@ -156,7 +220,7 @@ export interface ElectronAPI {
     getUser: () => Promise<User | null>
     signIn: () => Promise<{ success: boolean; user?: User; error?: string }>
     signOut: () => Promise<{ success: boolean; error?: string }>
-    getDriveConnection: () => Promise<DriveConnection>
+    getGoogleConnection: () => Promise<GoogleConnection>
   }
 
   // Drive
@@ -176,6 +240,17 @@ export interface ElectronAPI {
   db: {
     getIndexedFiles: () => Promise<{ success: boolean; files?: any[]; error?: string }>
     getCleanupCandidates: (maxFiles?: number) => Promise<{ success: boolean; candidates?: CleanupCandidate[]; error?: string }>
+  }
+
+  // Calendar
+  calendar: {
+    getEvents: (timeRange?: { start?: string, end?: string }) => 
+      Promise<{ success: boolean; events?: CalendarEvent[]; error?: string }>
+    getToday: () => Promise<{ success: boolean; events?: CalendarEvent[]; error?: string }>
+    getWeek: () => Promise<{ success: boolean; events?: CalendarEvent[]; error?: string }>
+    getNextWeek: () => Promise<{ success: boolean; events?: CalendarEvent[]; error?: string }>
+    analyze: (query: string) => Promise<{ success: boolean; analysis?: CalendarAnalysis; error?: string }>
+    getContext: (query: string) => Promise<{ success: boolean; context?: string; error?: string }>
   }
 }
 

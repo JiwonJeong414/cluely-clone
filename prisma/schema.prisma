@@ -18,7 +18,7 @@ model User {
   photoURL             String?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
-  driveConnection      DriveConnection?
+  googleConnection     GoogleConnection?
   documents            Document[]
   documentEmbeddings   DocumentEmbedding[]
   chats                Chat[]
@@ -28,7 +28,7 @@ model User {
   @@map("users")
 }
 
-model DriveConnection {
+model GoogleConnection {
   id           String    @id @default(cuid())
   userId       String    @unique
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -36,10 +36,11 @@ model DriveConnection {
   refreshToken String?
   isConnected  Boolean   @default(true)
   connectedAt  DateTime  @default(now())
-  lastSyncAt   DateTime?
+  lastDriveSyncAt DateTime?
+  lastCalendarSyncAt DateTime?
   updatedAt    DateTime  @updatedAt
 
-  @@map("drive_connections")
+  @@map("google_connections")
 }
 
 model Document {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { initializeOpenAI, getOpenAI, type ChatMessage } from './api/openai'
-import type { User, DriveConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster } from '../electron/preload'
+import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, CalendarAnalysis, CalendarInsight } from '../electron/preload'
+import { AuthButton } from './components/AuthButton'
 
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
@@ -17,9 +18,10 @@ interface Message {
   hasScreenshot?: boolean
   screenshotUrl?: string
   driveContext?: any[]
+  calendarContext?: string
 }
 
-type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize'
+type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar'
 
 function App() {
   // Existing state
@@ -36,7 +38,7 @@ function App() {
   // New Drive state
   const [currentMode, setCurrentMode] = useState<AppMode>('chat')
   const [user, setUser] = useState<User | null>(null)
-  const [driveConnection, setDriveConnection] = useState<DriveConnection>({ isConnected: false })
+  const [googleConnection, setGoogleConnection] = useState<GoogleConnection>({ isConnected: false })
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
   const [cleanupCandidates, setCleanupCandidates] = useState<CleanupCandidate[]>([])
   const [organizationClusters, setOrganizationClusters] = useState<OrganizationCluster[]>([])
@@ -45,6 +47,10 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
+  
+  // Calendar state
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [calendarContext, setCalendarContext] = useState<string>('')
   
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -58,8 +64,8 @@ function App() {
           if (userData) {
             setUser(userData)
             
-            const connection = await window.electronAPI.auth.getDriveConnection()
-            setDriveConnection(connection)
+            const connection = await window.electronAPI.auth.getGoogleConnection()
+            setGoogleConnection(connection)
           }
         } catch (error) {
           console.error('Error loading user data:', error)
@@ -109,9 +115,9 @@ function App() {
       if (result.success && result.user) {
         setUser(result.user)
         
-        // Refresh drive connection
-        const connection = await window.electronAPI.auth.getDriveConnection()
-        setDriveConnection(connection)
+        // Refresh Google connection
+        const connection = await window.electronAPI.auth.getGoogleConnection()
+        setGoogleConnection(connection)
       } else {
         console.error('Sign in failed:', result.error)
       }
@@ -128,7 +134,7 @@ function App() {
     try {
       await window.electronAPI.auth.signOut()
       setUser(null)
-      setDriveConnection({ isConnected: false })
+      setGoogleConnection({ isConnected: false })
       setCurrentMode('chat')
     } catch (error) {
       console.error('Error signing out:', error)
@@ -166,23 +172,52 @@ function App() {
   // Search Drive documents
   const handleDriveSearch = async (query: string) => {
     if (!window.electronAPI?.drive || !user) return
-    
+
     try {
-      const result = await window.electronAPI.drive.search(query, 5)
-      if (result.success) {
-        setSearchResults(result.results || [])
+      // Check if it's a calendar-related query
+      const isCalendar = isCalendarQuery(query)
+      
+      let calendarCtx = ''
+      let driveResults = null
+      
+      // Get calendar context if it's a calendar query
+      if (isCalendar) {
+        calendarCtx = await getCalendarContextForAI(query)
+        setCalendarContext(calendarCtx)
+      }
+      
+      // Always search Drive for context
+      const driveResult = await window.electronAPI.drive.search(query, 5)
+      if (driveResult.success) {
+        driveResults = driveResult.results
+        setSearchResults(driveResults || [])
+      }
+      
+      // Build comprehensive context message
+      let contextualMessage = query
+      
+      if (calendarCtx) {
+        contextualMessage = `${calendarCtx}\n\nUser question: ${query}`
+      }
+      
+      if (driveResults && driveResults.length > 0) {
+        const driveContextText = driveResults
+          .map(r => `Document: ${r.fileName}\nContent: ${r.content.substring(0, 300)}...`)
+          .join('\n\n')
         
-        // Add Drive context to chat if we have results
-        if (result.results && result.results.length > 0) {
-          const driveContextMessage = `Based on your Google Drive documents:\n\n${result.results
-            .map(r => `📄 ${r.fileName}: ${r.content.substring(0, 100)}...`)
-            .join('\n\n')}\n\nUser question: ${query}`
-          
-          await sendMessage(driveContextMessage, undefined, result.results)
+        if (calendarCtx) {
+          contextualMessage += `\n\nRelevant documents from Google Drive:\n${driveContextText}`
+        } else {
+          contextualMessage = `Based on your Google Drive documents:\n\n${driveContextText}\n\nUser question: ${query}`
         }
       }
+      
+      // Send to AI with all context
+      await sendMessage(contextualMessage, undefined, driveResults || undefined, calendarCtx)
     } catch (error) {
-      console.error('Error searching Drive:', error)
+      console.error('Error in integrated search:', error)
+      // Fallback to regular message
+      await sendMessage(query)
     }
   }
 
@@ -241,8 +276,74 @@ function App() {
     }
   }
 
+  // Calendar helper functions
+  const isCalendarQuery = (query: string): boolean => {
+    const calendarKeywords = [
+      'calendar', 'schedule', 'meeting', 'appointment', 'event',
+      'today', 'tomorrow', 'this week', 'next week', 'coming up',
+      'busy', 'free', 'available', 'when am i', 'what\'s next',
+      'upcoming', 'agenda', 'plans', 'booked'
+    ]
+    
+    const lowerQuery = query.toLowerCase()
+    return calendarKeywords.some(keyword => lowerQuery.includes(keyword))
+  }
+
+  const getCalendarContextForAI = async (query: string): Promise<string> => {
+    if (!window.electronAPI?.calendar || !user) return ''
+    
+    try {
+      const result = await window.electronAPI.calendar.getContext(query)
+      if (result.success && result.context) {
+        return result.context
+      }
+    } catch (error) {
+      console.error('Error getting calendar context:', error)
+    }
+    
+    return ''
+  }
+
+  // Example queries that will trigger calendar integration
+  const calendarExampleQueries = [
+    "What's on my schedule today?",
+    "Do I have any meetings tomorrow?",
+    "When am I free this week?",
+    "What's coming up next week?",
+    "Am I busy on Friday afternoon?",
+    "When's my next meeting?",
+    "Help me prepare for tomorrow's meetings",
+    "What should I focus on today based on my calendar?",
+    "Do I have time for a 1-hour task this afternoon?",
+    "What's my busiest day this week?"
+  ]
+
+  // Add smart suggestions based on calendar context
+  const getSmartSuggestions = (): string[] => {
+    const currentHour = new Date().getHours()
+    const suggestions = []
+    
+    if (currentHour < 12) {
+      suggestions.push("What's on my agenda today?")
+      suggestions.push("Do I need to prepare for any meetings?")
+    } else {
+      suggestions.push("How does tomorrow look?")
+      suggestions.push("What's coming up this week?")
+    }
+    
+    suggestions.push("When am I free for focused work?")
+    suggestions.push("Show me my busiest days")
+    
+    return suggestions
+  }
+
   // Send message with Drive context
-  const sendMessage = async (userMessage: string, screenshotDataUrl?: string, driveContext?: any[]) => {
+  const sendMessage = async (
+    userMessage: string, 
+    screenshotDataUrl?: string, 
+    driveContext?: any[], 
+    calendarContext?: string
+  ) => {
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -262,18 +363,22 @@ function App() {
     try {
       const openai = getOpenAI()
       
-      // Build context-aware message
-      let contextualContent = userMessage
-      if (driveContext && driveContext.length > 0) {
-        const driveContextText = driveContext
-          .map(ctx => `Document: ${ctx.fileName}\nContent: ${ctx.content.substring(0, 500)}...`)
-          .join('\n\n')
-        
-        contextualContent = `Based on the following documents from Google Drive:\n\n${driveContextText}\n\nUser question: ${userMessage}`
-      }
+      // Build enhanced system prompt with calendar awareness
+      const systemPrompt = `You are Wingman, a helpful AI assistant with access to Google Drive documents and Google Calendar. 
+
+Key capabilities:
+- Access to user's calendar events, schedule analysis, and meeting insights
+- Access to user's Google Drive documents for context
+- Provide scheduling advice, meeting preparation tips, and time management suggestions
+- Help identify conflicts, busy periods, and free time slots
+- Suggest optimal timing for tasks based on calendar availability
+
+When calendar information is provided, use it to give specific, actionable advice about time management, scheduling, and productivity. Consider travel time, meeting preparation needs, and workload distribution.
+
+Be conversational, helpful, and proactive in offering scheduling and productivity insights.`
       
       if (screenshotDataUrl) {
-        // Use vision API
+        // Use vision API with calendar context
         let fullResponse = ''
         await openai.analyzeScreenshotStream(
           screenshotDataUrl,
@@ -282,7 +387,7 @@ function App() {
             setStreamingText(fullResponse)
             requestAnimationFrame(() => updateDimensions())
           },
-          contextualContent
+          userMessage
         )
         
         const assistantMsg: Message = {
@@ -295,15 +400,15 @@ function App() {
 
         setCurrentResponse(assistantMsg)
       } else {
-        // Regular text chat
+        // Regular text chat with enhanced context
         const chatMessages: ChatMessage[] = [
           {
             role: 'system',
-            content: 'You are Wingman, a helpful AI assistant with access to Google Drive documents. When provided with Drive context, use it to give more relevant and specific answers.'
+            content: systemPrompt
           },
           {
             role: 'user',
-            content: contextualContent
+            content: userMessage
           }
         ]
         
@@ -319,7 +424,8 @@ function App() {
           role: 'assistant',
           content: fullResponse,
           timestamp: new Date(),
-          driveContext
+          driveContext,
+          calendarContext // Add calendar context to message
         }
 
         setCurrentResponse(assistantMsg)
@@ -355,7 +461,7 @@ function App() {
     if (!query || isLoading || isStreaming) return
 
     // If we have Drive connection, search Drive first
-    if (driveConnection.isConnected && currentMode === 'chat') {
+    if (googleConnection.isConnected && currentMode === 'chat') {
       await handleDriveSearch(query)
     } else {
       await sendMessage(query)
@@ -402,12 +508,22 @@ function App() {
         }
       }
       
+      // Cmd+Shift+C for Calendar mode
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'C') {
+        e.preventDefault()
+        setCurrentMode('calendar')
+        
+        if (window.electronAPI?.showWindow) {
+          window.electronAPI.showWindow()
+        }
+      }
+      
       // Cmd+Enter to cycle through modes (only if authenticated)
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
-        if (user && driveConnection.isConnected) {
+        if (user && googleConnection.isConnected) {
           setCurrentMode(prev => {
-            const modes: AppMode[] = ['chat', 'drive', 'cleanup', 'organize']
+            const modes: AppMode[] = ['chat', 'drive', 'calendar', 'cleanup', 'organize']
             const currentIndex = modes.indexOf(prev)
             return modes[(currentIndex + 1) % modes.length]
           })
@@ -424,7 +540,7 @@ function App() {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [user, driveConnection])
+  }, [user, googleConnection])
 
   // Debug: Add this useEffect to log mode changes
   useEffect(() => {
@@ -436,14 +552,14 @@ function App() {
     if (!user) {
       return (
         <div className="p-6 text-center">
-          <h3 className="text-white text-lg mb-4">Sign in to access Drive features</h3>
-          <button
-            onClick={handleSignIn}
-            disabled={isAuthenticating}
-            className="px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
-          >
-            {isAuthenticating ? 'Signing in...' : 'Sign in with Google'}
-          </button>
+          <h3 className="text-white text-lg mb-4">Sign in to access Google Drive & Calendar</h3>
+          <AuthButton
+            user={user}
+            googleConnection={googleConnection}
+            onSignIn={handleSignIn}
+            onSignOut={handleSignOut}
+            className="mx-auto"
+          />
         </div>
       )
     }
@@ -456,13 +572,15 @@ function App() {
               <div className="flex items-center justify-between">
                 <h3 className="text-white font-medium">Drive Management</h3>
                 <div className="flex gap-2">
-                  <button
-                    onClick={handleSync}
-                    disabled={isSyncing}
-                    className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/30 rounded text-sm text-white transition-colors"
-                  >
-                    {isSyncing ? 'Syncing...' : 'Sync'}
-                  </button>
+                  {user && googleConnection.isConnected && (
+                    <button
+                      onClick={handleSync}
+                      disabled={isSyncing}
+                      className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs rounded transition-colors disabled:opacity-50"
+                    >
+                      {isSyncing ? 'Syncing...' : 'Sync Drive'}
+                    </button>
+                  )}
                 </div>
               </div>
               
@@ -657,6 +775,48 @@ function App() {
           </div>
         )
 
+      case 'calendar':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">Calendar</h3>
+                <div className="flex gap-1">
+                  {(['today', 'week', 'next-week'] as const).map((range) => (
+                    <button
+                      key={range}
+                      onClick={() => {
+                        // This will be implemented with state
+                        console.log('Calendar range selected:', range)
+                      }}
+                      className={`px-2 py-1 text-xs rounded transition-colors ${
+                        range === 'today'
+                          ? 'bg-purple-500/30 border border-purple-400/50 text-white'
+                          : 'bg-purple-500/10 border border-purple-400/20 text-white/70 hover:bg-purple-500/20'
+                      }`}
+                    >
+                      {range === 'today' ? 'Today' : range === 'week' ? 'This Week' : 'Next Week'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="text-center text-white/60 py-8">
+                Calendar view coming soon...
+              </div>
+              
+              <div className="pt-2 border-t border-purple-500/10">
+                <button
+                  onClick={() => setCurrentMode('chat')}
+                  className="w-full px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/30 rounded text-sm text-white transition-colors"
+                >
+                  💬 Ask about your schedule
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
       default: // chat mode
         return null
     }
@@ -729,10 +889,10 @@ function App() {
             
             <div>
               <h1 className="text-white font-medium text-sm">
-                Wingman {user && driveConnection.isConnected && `• ${currentMode}`}
+                Wingman {user && googleConnection.isConnected && `• ${currentMode}`}
               </h1>
               <p className="text-white/50 text-xs">
-                {user ? `${user.displayName} • ${driveConnection.isConnected ? 'Drive Connected' : 'Drive Disconnected'}` : 'Not signed in'}
+                {user ? `${user.displayName} • ${googleConnection.isConnected ? 'Google Services Connected' : 'Google Services Disconnected'}` : 'Not signed in'}
               </p>
             </div>
           </div>
@@ -750,6 +910,17 @@ function App() {
                   title="Drive mode (⌘⇧D)"
                 >
                   💾
+                </button>
+                <button
+                  onClick={() => setCurrentMode('calendar')}
+                  className={`p-2 border rounded-lg text-sm transition-colors ${
+                    currentMode === 'calendar' 
+                      ? 'bg-purple-500/30 border-purple-400/50' 
+                      : 'bg-purple-500/10 border-purple-400/20 hover:bg-purple-500/20'
+                  }`}
+                  title="Calendar mode"
+                >
+                  📅
                 </button>
                 <button
                   onClick={handleSignOut}
@@ -772,7 +943,7 @@ function App() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit(e))}
-              placeholder={driveConnection.isConnected ? "Ask about your Drive..." : "Type a message..."}
+              placeholder={googleConnection.isConnected ? "Ask about your Drive, calendar, or anything..." : "Type a message..."}
               className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-20 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
               disabled={isLoading || isStreaming}
               autoFocus
@@ -790,7 +961,7 @@ function App() {
         {/* Mode shortcuts */}
         <div className="mt-2 text-center">
           <span className="text-white/30 text-xs">
-            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
+            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⌘⇧C Calendar • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
           </span>
         </div>
       </div>
@@ -812,7 +983,7 @@ function App() {
                       <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
                     </div>
                     <span className="text-blue-300 text-sm font-medium">
-                      {driveConnection.isConnected ? 'Searching Drive & analyzing...' : 'Analyzing...'}
+                      {googleConnection.isConnected ? 'Searching Drive & Calendar & analyzing...' : 'Analyzing...'}
                     </span>
                   </div>
                 )}
@@ -825,6 +996,18 @@ function App() {
               <div className="text-sm leading-relaxed space-y-3 text-white/90">
                 {currentResponse.content}
               </div>
+              
+              {/* Show Calendar context if available */}
+              {currentResponse.calendarContext && (
+                <div className="mt-4 pt-3 border-t border-purple-400/10">
+                  <div className="text-xs text-purple-300 mb-2">📅 Calendar Analysis:</div>
+                  <div className="text-xs text-white/70 bg-purple-500/5 border border-purple-400/10 rounded p-2 max-h-32 overflow-y-auto custom-scrollbar">
+                    {currentResponse.calendarContext.split('\n').map((line, idx) => (
+                      <div key={idx} className="mb-1">{line}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               {/* Show Drive context if available */}
               {currentResponse.driveContext && currentResponse.driveContext.length > 0 && (
@@ -852,11 +1035,32 @@ function App() {
               {user ? `Welcome back, ${user.displayName?.split(' ')[0]}!` : 'Ready to help'}
             </h2>
             <p className="text-white/50 text-sm mb-4">
-              {driveConnection.isConnected 
-                ? 'I can search your Drive and answer questions about your documents'
-                : 'Type above, press ⌘⇧S to capture screen, or sign in for Drive access'
+              {googleConnection.isConnected 
+                ? 'I can search your Drive, check your calendar, and help with scheduling and productivity'
+                : 'Type above, press ⌘⇧S to capture screen, or sign in for Drive & Calendar access'
               }
             </p>
+            
+            {/* Smart Suggestions */}
+            {user && googleConnection.isConnected && (
+              <div className="mb-4">
+                <div className="text-white/40 text-xs mb-2">Try asking:</div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {getSmartSuggestions().slice(0, 3).map((suggestion, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setInputValue(suggestion)
+                        inputRef.current?.focus()
+                      }}
+                      className="px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/20 rounded-full text-xs text-white/70 hover:text-white transition-colors"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             
             {appVersion && (
               <div className="pt-3 border-t border-blue-500/10">
@@ -865,7 +1069,7 @@ function App() {
                   <div className="flex items-center gap-2">
                     <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
                     <span className="text-white/30">
-                      {driveConnection.isConnected ? 'Drive + Vision Ready' : 'Vision Ready'}
+                      {googleConnection.isConnected ? 'Drive + Calendar + Vision Ready' : 'Vision Ready'}
                     </span>
                   </div>
                 </div>

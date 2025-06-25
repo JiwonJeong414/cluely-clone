@@ -7,6 +7,7 @@ import { AuthService } from '../src/services/auth/AuthService'
 import { DriveService } from '../src/services/drive/DriveService'
 import { VectorService } from '../src/services/vector/VectorService'
 import { OrganizationService } from '../src/services/organization/OrganizationService'
+import { CalendarService } from '../src/services/calendar/CalendarService'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -22,6 +23,7 @@ let authService: AuthService
 let driveService: DriveService
 let vectorService: VectorService
 let organizationService: OrganizationService
+let calendarService: CalendarService
 
 async function initializeServices() {
   try {
@@ -53,6 +55,10 @@ async function initializeServices() {
     // Initialize organization service
     organizationService = new OrganizationService(driveService, dbService)
     console.log('✅ Organization service initialized')
+    
+    // Initialize calendar service
+    calendarService = CalendarService.getInstance()
+    console.log('✅ Calendar service initialized')
     
     console.log('✅ All services initialized successfully')
   } catch (error) {
@@ -461,15 +467,29 @@ ipcMain.handle('auth-sign-out', async () => {
   }
 })
 
+ipcMain.handle('auth-get-google-connection', async () => {
+  try {
+    if (!authService) {
+      return { isConnected: false }
+    }
+    
+    return authService.getGoogleConnection()
+  } catch (error) {
+    console.error('Error getting Google connection:', error)
+    return { isConnected: false }
+  }
+})
+
+// Keep the old handler for backward compatibility
 ipcMain.handle('auth-get-drive-connection', async () => {
   try {
     if (!authService) {
       return { isConnected: false }
     }
     
-    return authService.getDriveConnection()
+    return authService.getGoogleConnection()
   } catch (error) {
-    console.error('Error getting drive connection:', error)
+    console.error('Error getting Google connection:', error)
     return { isConnected: false }
   }
 })
@@ -781,6 +801,176 @@ ipcMain.handle('db-get-cleanup-candidates', async (event, maxFiles = 50) => {
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Get cleanup candidates failed' 
+    }
+  }
+})
+
+// Calendar events handler
+ipcMain.handle('calendar-get-events', async (event, timeRange?: { start?: string, end?: string }) => {
+  try {
+    if (!calendarService) {
+      return { success: false, error: 'Calendar service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('🗓️ Fetching calendar events...')
+    
+    let events
+    if (timeRange?.start && timeRange?.end) {
+      events = await calendarService.getEventsForDateRange(
+        new Date(timeRange.start),
+        new Date(timeRange.end)
+      )
+    } else {
+      events = await calendarService.getUpcomingEvents()
+    }
+    
+    console.log(`✅ Found ${events.length} calendar events`)
+    return { success: true, events }
+  } catch (error) {
+    console.error('❌ Calendar get events error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get events' 
+    }
+  }
+})
+
+// Today's events handler
+ipcMain.handle('calendar-get-today', async () => {
+  try {
+    if (!calendarService) {
+      return { success: false, error: 'Calendar service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('📅 Fetching today\'s events...')
+    
+    const events = await calendarService.getTodaysEvents()
+    
+    console.log(`✅ Found ${events.length} events for today`)
+    return { success: true, events }
+  } catch (error) {
+    console.error('❌ Calendar get today error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get today\'s events' 
+    }
+  }
+})
+
+// This week's events handler
+ipcMain.handle('calendar-get-week', async () => {
+  try {
+    if (!calendarService) {
+      return { success: false, error: 'Calendar service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('📅 Fetching this week\'s events...')
+    
+    const events = await calendarService.getThisWeeksEvents()
+    
+    console.log(`✅ Found ${events.length} events for this week`)
+    return { success: true, events }
+  } catch (error) {
+    console.error('❌ Calendar get week error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get week\'s events' 
+    }
+  }
+})
+
+// Next week's events handler
+ipcMain.handle('calendar-get-next-week', async () => {
+  try {
+    if (!calendarService) {
+      return { success: false, error: 'Calendar service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('📅 Fetching next week\'s events...')
+    
+    const events = await calendarService.getNextWeeksEvents()
+    
+    console.log(`✅ Found ${events.length} events for next week`)
+    return { success: true, events }
+  } catch (error) {
+    console.error('❌ Calendar get next week error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get next week\'s events' 
+    }
+  }
+})
+
+// Calendar analysis handler - this is the key one for AI integration
+ipcMain.handle('calendar-analyze', async (event, query: string) => {
+  try {
+    if (!calendarService) {
+      return { success: false, error: 'Calendar service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log(`🤖 Analyzing calendar for query: "${query}"`)
+    
+    const analysis = await calendarService.analyzeSchedule(query)
+    
+    console.log(`✅ Calendar analysis completed: ${analysis.events.length} events, ${analysis.insights.length} insights`)
+    return { success: true, analysis }
+  } catch (error) {
+    console.error('❌ Calendar analyze error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to analyze calendar' 
+    }
+  }
+})
+
+// Calendar context for AI - simplified context string
+ipcMain.handle('calendar-get-context', async (event, query: string) => {
+  try {
+    if (!calendarService) {
+      return { success: false, error: 'Calendar service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log(`📋 Getting calendar context for query: "${query}"`)
+    
+    const context = await calendarService.getCalendarContext(query)
+    
+    console.log(`✅ Calendar context generated (${context.length} characters)`)
+    return { success: true, context }
+  } catch (error) {
+    console.error('❌ Calendar get context error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get calendar context' 
     }
   }
 })

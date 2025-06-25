@@ -12,19 +12,20 @@ export interface User {
   photoURL?: string
 }
 
-export interface DriveConnection {
+export interface GoogleConnection {
   isConnected: boolean
   accessToken?: string
   refreshToken?: string
   connectedAt?: Date
-  lastSyncAt?: Date
+  lastDriveSyncAt?: Date
+  lastCalendarSyncAt?: Date
 }
 
 export class AuthService {
   private static instance: AuthService
   private oauth2Client: any
   private currentUser: User | null = null
-  private driveConnection: DriveConnection = { isConnected: false }
+  private googleConnection: GoogleConnection = { isConnected: false }
   private db: DatabaseService
 
   private constructor() {
@@ -53,12 +54,13 @@ export class AuthService {
         // Generate state for CSRF protection
         const state = crypto.randomBytes(32).toString('hex')
         
-        // Create OAuth URL with Drive scopes
+        // Create OAuth URL with Drive and Calendar scopes
         const scopes = [
           'openid',
           'email',
           'profile',
-          'https://www.googleapis.com/auth/drive'
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/calendar.readonly' 
         ]
 
         const authUrl = this.oauth2Client.generateAuthUrl({
@@ -101,15 +103,15 @@ export class AuthService {
                 photoURL: userInfo.picture || ''
               })
 
-              // Store Drive connection
+              // Store Google connection
               if (tokens.access_token) {
-                await this.db.upsertDriveConnection(user.id, {
+                await this.db.upsertGoogleConnection(user.id, {
                   accessToken: tokens.access_token,
                   refreshToken: tokens.refresh_token || undefined,
                   isConnected: true
                 })
 
-                this.driveConnection = {
+                this.googleConnection = {
                   isConnected: true,
                   accessToken: tokens.access_token,
                   refreshToken: tokens.refresh_token || undefined,
@@ -174,7 +176,7 @@ export class AuthService {
 
   async signOut() {
     this.currentUser = null
-    this.driveConnection = { isConnected: false }
+    this.googleConnection = { isConnected: false }
     
     if (this.oauth2Client) {
       this.oauth2Client.setCredentials({})
@@ -185,8 +187,8 @@ export class AuthService {
     return this.currentUser
   }
 
-  getDriveConnection(): DriveConnection {
-    return this.driveConnection
+  getGoogleConnection(): GoogleConnection {
+    return this.googleConnection
   }
 
   async loadUserFromStorage(): Promise<void> {
@@ -199,15 +201,16 @@ export class AuthService {
         const user = users[0]
         this.currentUser = user
 
-        // Load drive connection
-        const connection = await this.db.getDriveConnection(user.id)
+        // Load Google connection
+        const connection = await this.db.getGoogleConnection(user.id)
         if (connection) {
-          this.driveConnection = {
+          this.googleConnection = {
             isConnected: connection.isConnected,
             accessToken: connection.accessToken,
             refreshToken: connection.refreshToken || undefined,
             connectedAt: connection.connectedAt,
-            lastSyncAt: connection.lastSyncAt || undefined
+            lastDriveSyncAt: connection.lastDriveSyncAt || undefined,
+            lastCalendarSyncAt: connection.lastCalendarSyncAt || undefined
           }
 
           // Restore OAuth credentials

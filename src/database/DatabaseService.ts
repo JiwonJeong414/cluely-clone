@@ -2,7 +2,7 @@
 import { PrismaClient } from '@prisma/client'
 // @ts-ignore
 // import { AuthService } from '../services/auth/AuthService.js'
-import type { User } from '../services/auth/AuthService.js'
+import type { User, GoogleConnection } from '../services/auth/AuthService.js'
 
 export interface DocumentRecord {
   id: string
@@ -122,13 +122,13 @@ export class DatabaseService {
     }))
   }
 
-  // Drive connection operations
-  async upsertDriveConnection(userId: string, connectionData: {
+  // Google connection operations
+  async upsertGoogleConnection(userId: string, connectionData: {
     accessToken: string
     refreshToken?: string
     isConnected: boolean
   }) {
-    return await this.prisma.driveConnection.upsert({
+    return await this.prisma.googleConnection.upsert({
       where: { userId },
       update: {
         accessToken: connectionData.accessToken,
@@ -148,17 +148,27 @@ export class DatabaseService {
     })
   }
 
-  async getDriveConnection(userId: string) {
-    return await this.prisma.driveConnection.findUnique({
+  async getGoogleConnection(userId: string) {
+    return await this.prisma.googleConnection.findUnique({
       where: { userId }
     })
   }
 
   async updateDriveSyncTime(userId: string) {
-    return await this.prisma.driveConnection.update({
+    return await this.prisma.googleConnection.update({
       where: { userId },
       data: {
-        lastSyncAt: new Date(),
+        lastDriveSyncAt: new Date(),
+        updatedAt: new Date(),
+      },
+    })
+  }
+
+  async updateCalendarSyncTime(userId: string) {
+    return await this.prisma.googleConnection.update({
+      where: { userId },
+      data: {
+        lastCalendarSyncAt: new Date(),
         updatedAt: new Date(),
       },
     })
