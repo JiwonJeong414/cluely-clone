@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { initializeOpenAI, getOpenAI, type ChatMessage } from './api/openai'
-import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, CalendarAnalysis, CalendarInsight, Place } from '../electron/preload'
+import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, Place } from '../electron/preload'
 import { AuthButton } from './components/AuthButton'
+import { MapVisualization, PlacesList } from './components/MapVisualization'
 
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
@@ -43,10 +44,9 @@ function App() {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
   const [cleanupCandidates, setCleanupCandidates] = useState<CleanupCandidate[]>([])
   const [organizationClusters, setOrganizationClusters] = useState<OrganizationCluster[]>([])
-  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([])
-  const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
   
   // Calendar state
@@ -58,6 +58,9 @@ function App() {
   // Maps state
   const [places, setPlaces] = useState<Place[]>([])
   const [isSearchingMaps, setIsSearchingMaps] = useState(false)
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null)
+  const [lastQueryWasLocation, setLastQueryWasLocation] = useState(false)
   
   // Add state for sync stats
   const [syncStats, setSyncStats] = useState<any>(null)
@@ -298,6 +301,15 @@ function App() {
 
   // Search Drive documents - FIXED
   const handleDriveSearch = async (query: string) => {
+    const isCalendar = isCalendarQuery(query)
+    const isLocation = isLocationQuery(query)
+
+    // Only clear map state if this is NOT a location query
+    if (!isLocation) {
+      setLastQueryWasLocation(false)
+      setPlaces([])
+    }
+
     if (!user || !googleConnection.isConnected) {
       await sendMessage(query)
       return
@@ -305,10 +317,7 @@ function App() {
 
     try {
       console.log('🔍 Starting integrated search for:', query)
-      
-      const isCalendar = isCalendarQuery(query)
-      const isLocation = isLocationQuery(query)
-      
+      setLastQueryWasLocation(isLocation)
       let calendarCtx = ''
       let driveResults = null
       let locationResults = null
@@ -323,16 +332,25 @@ function App() {
         }
       }
       
-      // Search maps if location query - and RETURN EARLY if it's ONLY a location query
+      // Search maps if location query
       if (isLocation && window.electronAPI?.maps) {
         try {
           setIsSearchingMaps(true)
+          
+          // Get user location first if we don't have it
+          if (!userLocation) {
+            const location = await requestLocationPermission()
+            if (location) {
+              setUserLocation(location)
+            }
+          }
+          
           const mapsResult = await window.electronAPI.maps.search(query)
           if (mapsResult.success && mapsResult.places) {
             locationResults = mapsResult.places
             setPlaces(locationResults)
             console.log(`🗺️ Found ${locationResults.length} places`)
-            
+            // Do NOT switch to maps mode; just show map inline in chat
             // If this is PURELY a location query (no calendar context), don't search Drive
             if (!isCalendar) {
               // Build location-only context message
@@ -358,6 +376,7 @@ function App() {
         }
       }
       
+      // Continue with existing Drive and Calendar search logic...
       // Only search Drive if it's NOT a pure location query OR if we also need calendar context
       if (!isLocation || isCalendar) {
         try {
@@ -400,6 +419,8 @@ function App() {
     } catch (error) {
       console.error('Error in integrated search:', error)
       await sendMessage(query)
+      setLastQueryWasLocation(false)
+      setPlaces([])
     }
   }
 
@@ -1419,66 +1440,127 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
 
       case 'maps':
         return (
-          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-white font-medium">Nearby Places</h3>
-                <button
-                  onClick={() => setCurrentMode('chat')}
-                  className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs rounded transition-colors"
-                >
-                  Search
-                </button>
+          <div className="space-y-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* Maps Header */}
+            <div className="px-4 pt-4 pb-0">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-white font-medium">Maps & Locations</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      const location = await requestLocationPermission()
+                      if (location) {
+                        setUserLocation(location)
+                      }
+                    }}
+                    className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs rounded transition-colors"
+                    title="Update location"
+                  >
+                    📍 Locate
+                  </button>
+                  <button
+                    onClick={() => setCurrentMode('chat')}
+                    className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs rounded transition-colors"
+                  >
+                    Search
+                  </button>
+                </div>
               </div>
-              
-              {isSearchingMaps && (
-                <div className="text-center py-4">
-                  <div className="flex items-center justify-center gap-3">
-                    <div className="w-4 h-4 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin"></div>
-                    <span className="text-green-300 text-sm">Finding places...</span>
-                  </div>
-                </div>
-              )}
-              
-              {places.length > 0 && (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {places.map((place) => (
-                    <div
-                      key={place.placeId}
-                      className="bg-green-500/10 border border-green-400/20 rounded-lg p-3"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-white/90 text-sm font-medium">
-                            {place.name}
-                          </div>
-                          <div className="text-green-300 text-xs mt-1">
-                            {place.address}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-white/60 mt-1">
-                            {place.rating && (
-                              <span>⭐ {place.rating}</span>
-                            )}
-                            {place.distance && (
-                              <span>📍 {place.distance}</span>
-                            )}
-                            {place.duration && (
-                              <span>⏱️ {place.duration}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+
+              {/* Location Status */}
+              <div className={`text-xs px-3 py-2 rounded-lg border mb-3 ${
+                userLocation 
+                  ? 'bg-green-500/10 border-green-400/20 text-green-300'
+                  : 'bg-yellow-500/10 border-yellow-400/20 text-yellow-300'
+              }`}>
+                {userLocation 
+                  ? `📍 Location: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`
+                  : '📍 Location access needed for accurate results'
+                }
+              </div>
+            </div>
+
+            {/* Map Visualization */}
+            <div className="px-4">
+              <MapVisualization
+                places={places}
+                isSearching={isSearchingMaps}
+                userLocation={userLocation || undefined}
+                className="mb-4"
+              />
+            </div>
+
+            {/* Compact Places List */}
+            <div className="px-4 pb-4">
+              <PlacesList
+                places={places}
+                onPlaceSelect={(place) => {
+                  setSelectedPlace(place)
+                  // Optionally switch to chat mode to ask about this place
+                  console.log('Selected place:', place.name)
+                }}
+              />
               
               {places.length === 0 && !isSearchingMaps && (
                 <div className="text-center text-white/60 py-8">
-                  No places found.<br />
-                  Try asking "coffee shops near me"
+                  <div className="text-4xl mb-3">🗺️</div>
+                  <div>No places found</div>
+                  <div className="text-sm mt-2">
+                    Try asking "coffee shops near me" in chat mode
+                  </div>
                 </div>
               )}
+            </div>
+
+            {/* Quick Actions */}
+            <div className="px-4 pb-4">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setInputValue("restaurants near me")
+                    setCurrentMode('chat')
+                  }}
+                  className="p-3 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  🍽️ Restaurants
+                </button>
+                <button
+                  onClick={() => {
+                    setInputValue("coffee shops near me")
+                    setCurrentMode('chat')
+                  }}
+                  className="p-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  ☕ Coffee
+                </button>
+                <button
+                  onClick={() => {
+                    setInputValue("gas stations near me")
+                    setCurrentMode('chat')
+                  }}
+                  className="p-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  ⛽ Gas
+                </button>
+                <button
+                  onClick={() => {
+                    setInputValue("pharmacies near me")
+                    setCurrentMode('chat')
+                  }}
+                  className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  💊 Pharmacy
+                </button>
+              </div>
+            </div>
+
+            {/* Tips */}
+            <div className="px-4 pb-4">
+              <div className="text-xs text-white/40 space-y-1">
+                <div>💡 <strong>Click markers</strong> on the map for details</div>
+                <div>🔍 <strong>Search in chat:</strong> "coffee shops near me"</div>
+                <div>📍 <strong>Enable location</strong> for accurate distances</div>
+              </div>
             </div>
           </div>
         )
@@ -1658,7 +1740,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
       {currentMode !== 'chat' && renderModeContent()}
 
       {/* Chat Messages */}
-      {currentMode === 'chat' && (streamingText || isStreaming || currentResponse) && (
+      {currentMode === 'chat' && (streamingText || isStreaming || currentResponse || places.length > 0) && (
         <div className="px-6 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar">
           {(streamingText || isStreaming) && (
             <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4">
@@ -1710,6 +1792,24 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   </div>
                 </div>
               )}
+            </div>
+          )}
+          {/* Always show MapVisualization and PlacesList if places exist */}
+          {places.length > 0 && (
+            <div className="mt-6">
+              <MapVisualization
+                places={places}
+                isSearching={isSearchingMaps}
+                userLocation={userLocation || undefined}
+                className="mb-4"
+              />
+              <PlacesList
+                places={places}
+                onPlaceSelect={(place) => {
+                  setSelectedPlace(place)
+                  // Optionally, you could set inputValue and switch to chat for more info
+                }}
+              />
             </div>
           )}
         </div>
