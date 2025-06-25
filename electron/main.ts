@@ -8,6 +8,7 @@ import { DriveService } from '../src/services/drive/DriveService'
 import { VectorService } from '../src/services/vector/VectorService'
 import { OrganizationService } from '../src/services/organization/OrganizationService'
 import { CalendarService } from '../src/services/calendar/CalendarService'
+import { MapsService } from '../src/services/maps/MapsService'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -24,6 +25,7 @@ let driveService: DriveService
 let vectorService: VectorService
 let organizationService: OrganizationService
 let calendarService: CalendarService
+let mapsService: MapsService
 
 async function initializeServices() {
   try {
@@ -59,6 +61,10 @@ async function initializeServices() {
     // Initialize calendar service
     calendarService = CalendarService.getInstance()
     console.log('✅ Calendar service initialized')
+    
+    // Initialize maps service
+    mapsService = MapsService.getInstance()
+    console.log('✅ Maps service initialized')
     
     console.log('✅ All services initialized successfully')
   } catch (error) {
@@ -1069,6 +1075,123 @@ ipcMain.handle('calendar-get-context', async (event, query: string) => {
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to get calendar context' 
+    }
+  }
+})
+
+// Maps search handler
+ipcMain.handle('maps-search', async (event, query: string, options?: any) => {
+  try {
+    if (!mapsService) {
+      return { success: false, error: 'Maps service not available' }
+    }
+    
+    console.log(`🗺️ Searching maps for: "${query}"`)
+    
+    // Get location from renderer process if not provided
+    let location = options?.location
+    if (!location) {
+      try {
+        const locationResult = await event.sender.executeJavaScript(`
+          new Promise((resolve, reject) => {
+            if (!navigator.geolocation) {
+              reject(new Error('Geolocation not supported'));
+              return;
+            }
+            navigator.geolocation.getCurrentPosition(
+              (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+              (error) => reject(error),
+              { enableHighAccuracy: true, timeout: 10000 }
+            );
+          });
+        `)
+        location = locationResult
+        console.log('📍 Got location from renderer:', location)
+      } catch (locationError) {
+        console.error('❌ Failed to get location:', locationError)
+        return { 
+          success: false, 
+          error: 'Failed to get your location. Please enable location access and try again.' 
+        }
+      }
+    }
+    
+    const searchOptions = { ...options, location }
+    const places = await mapsService.searchNearby(query, searchOptions)
+    
+    console.log(`✅ Found ${places.length} places`)
+    return { success: true, places }
+  } catch (error) {
+    console.error('❌ Maps search error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Maps search failed' 
+    }
+  }
+})
+
+// Get current location handler
+ipcMain.handle('maps-get-location', async (event) => {
+  try {
+    console.log('📍 Getting location from renderer process...')
+    
+    const location = await event.sender.executeJavaScript(`
+      new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error('Geolocation not supported'));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+          (error) => reject(error),
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      });
+    `)
+    
+    console.log('✅ Got location:', location)
+    return { success: true, location }
+  } catch (error) {
+    console.error('❌ Get location error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get location' 
+    }
+  }
+})
+
+// Get place details handler
+ipcMain.handle('maps-get-place-details', async (event, placeId: string) => {
+  try {
+    if (!mapsService) {
+      return { success: false, error: 'Maps service not available' }
+    }
+    
+    const place = await mapsService.getPlaceDetails(placeId)
+    return { success: true, place }
+  } catch (error) {
+    console.error('❌ Get place details error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get place details' 
+    }
+  }
+})
+
+// Travel time handler
+ipcMain.handle('maps-get-travel-time', async (event, origin: any, destination: any, mode?: 'driving' | 'walking' | 'transit') => {
+  try {
+    if (!mapsService) {
+      return { success: false, error: 'Maps service not available' }
+    }
+    
+    const travelInfo = await mapsService.getTravelTime(origin, destination, mode)
+    return { success: true, travelInfo }
+  } catch (error) {
+    console.error('❌ Get travel time error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to get travel time' 
     }
   }
 })

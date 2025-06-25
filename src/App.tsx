@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { initializeOpenAI, getOpenAI, type ChatMessage } from './api/openai'
-import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, CalendarAnalysis, CalendarInsight } from '../electron/preload'
+import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, CalendarAnalysis, CalendarInsight, Place } from '../electron/preload'
 import { AuthButton } from './components/AuthButton'
 
 // Extend CSS properties to include webkit-specific properties
@@ -21,7 +21,7 @@ interface Message {
   calendarContext?: string
 }
 
-type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar' | 'profile'
+type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar' | 'profile' | 'maps'
 type CalendarRange = 'today' | 'week' | 'next-week'
 
 function App() {
@@ -54,6 +54,10 @@ function App() {
   const [calendarContext, setCalendarContext] = useState<string>('')
   const [selectedCalendarRange, setSelectedCalendarRange] = useState<CalendarRange>('today')
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(false)
+  
+  // Maps state
+  const [places, setPlaces] = useState<Place[]>([])
+  const [isSearchingMaps, setIsSearchingMaps] = useState(false)
   
   // Add state for sync stats
   const [syncStats, setSyncStats] = useState<any>(null)
@@ -294,22 +298,22 @@ function App() {
 
   // Search Drive documents - FIXED
   const handleDriveSearch = async (query: string) => {
-    if (!window.electronAPI?.drive || !user || !googleConnection.isConnected) {
-      console.warn('Drive search skipped: not connected')
-      await sendMessage(query) // Fallback to regular chat
+    if (!user || !googleConnection.isConnected) {
+      await sendMessage(query)
       return
     }
 
     try {
       console.log('🔍 Starting integrated search for:', query)
       
-      // Check if it's a calendar-related query
       const isCalendar = isCalendarQuery(query)
+      const isLocation = isLocationQuery(query)
       
       let calendarCtx = ''
       let driveResults = null
+      let locationResults = null
       
-      // Get calendar context if it's a calendar query
+      // Get calendar context if needed
       if (isCalendar && window.electronAPI?.calendar) {
         try {
           calendarCtx = await getCalendarContextForAI(query)
@@ -319,16 +323,29 @@ function App() {
         }
       }
       
+      // Search maps if location query
+      if (isLocation && window.electronAPI?.maps) {
+        try {
+          setIsSearchingMaps(true)
+          const mapsResult = await window.electronAPI.maps.search(query)
+          if (mapsResult.success && mapsResult.places) {
+            locationResults = mapsResult.places
+            setPlaces(locationResults)
+            console.log(`🗺️ Found ${locationResults.length} places`)
+          }
+        } catch (error) {
+          console.error('Maps search failed:', error)
+        } finally {
+          setIsSearchingMaps(false)
+        }
+      }
+      
       // Search Drive for context
       try {
         const driveResult = await window.electronAPI.drive.search(query, 5)
         if (driveResult.success && driveResult.results) {
           driveResults = driveResult.results
           setSearchResults(driveResults)
-          console.log(`📄 Found ${driveResults.length} relevant documents`)
-        } else {
-          console.warn('Drive search returned no results:', driveResult.error)
-          setSearchResults([])
         }
       } catch (error) {
         console.error('Drive search failed:', error)
@@ -342,23 +359,26 @@ function App() {
         contextualMessage = `${calendarCtx}\n\nUser question: ${query}`
       }
       
+      if (locationResults && locationResults.length > 0) {
+        const locationContext = locationResults
+          .map(place => `${place.name} - ${place.address} (${place.distance}, ${place.duration}) Rating: ${place.rating}/5`)
+          .join('\n')
+        
+        contextualMessage += `\n\nNearby places:\n${locationContext}`
+      }
+      
       if (driveResults && driveResults.length > 0) {
         const driveContextText = driveResults
           .map(r => `Document: ${r.fileName}\nContent: ${r.content.substring(0, 300)}...`)
           .join('\n\n')
         
-        if (calendarCtx) {
-          contextualMessage += `\n\nRelevant documents from Google Drive:\n${driveContextText}`
-        } else {
-          contextualMessage = `Based on your Google Drive documents:\n\n${driveContextText}\n\nUser question: ${query}`
-        }
+        contextualMessage += `\n\nRelevant documents:\n${driveContextText}`
       }
       
       // Send to AI with all context
       await sendMessage(contextualMessage, undefined, driveResults || undefined, calendarCtx)
     } catch (error) {
       console.error('Error in integrated search:', error)
-      // Fallback to regular message
       await sendMessage(query)
     }
   }
@@ -429,6 +449,18 @@ function App() {
     
     const lowerQuery = query.toLowerCase()
     return calendarKeywords.some(keyword => lowerQuery.includes(keyword))
+  }
+
+  const isLocationQuery = (query: string): boolean => {
+    const locationKeywords = [
+      'near me', 'nearby', 'closest', 'nearest', 'around here',
+      'restaurant', 'coffee', 'gas station', 'hospital', 'pharmacy',
+      'store', 'shop', 'bank', 'atm', 'hotel', 'parking',
+      'directions to', 'how to get to', 'drive to', 'walk to'
+    ]
+    
+    const lowerQuery = query.toLowerCase()
+    return locationKeywords.some(keyword => lowerQuery.includes(keyword))
   }
 
   const getCalendarContextForAI = async (query: string): Promise<string> => {
@@ -1258,6 +1290,72 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
           </div>
         )
 
+      case 'maps':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">Nearby Places</h3>
+                <button
+                  onClick={() => setCurrentMode('chat')}
+                  className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs rounded transition-colors"
+                >
+                  Search
+                </button>
+              </div>
+              
+              {isSearchingMaps && (
+                <div className="text-center py-4">
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="w-4 h-4 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin"></div>
+                    <span className="text-green-300 text-sm">Finding places...</span>
+                  </div>
+                </div>
+              )}
+              
+              {places.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {places.map((place) => (
+                    <div
+                      key={place.placeId}
+                      className="bg-green-500/10 border border-green-400/20 rounded-lg p-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white/90 text-sm font-medium">
+                            {place.name}
+                          </div>
+                          <div className="text-green-300 text-xs mt-1">
+                            {place.address}
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-white/60 mt-1">
+                            {place.rating && (
+                              <span>⭐ {place.rating}</span>
+                            )}
+                            {place.distance && (
+                              <span>📍 {place.distance}</span>
+                            )}
+                            {place.duration && (
+                              <span>⏱️ {place.duration}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {places.length === 0 && !isSearchingMaps && (
+                <div className="text-center text-white/60 py-8">
+                  No places found.<br />
+                  Try asking "coffee shops near me"
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
       default: // chat mode
         return null
     }
@@ -1371,6 +1469,17 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   📅
                 </button>
                 <button
+                  onClick={() => setCurrentMode('maps')}
+                  className={`p-2 border rounded-lg text-sm transition-colors ${
+                    currentMode === 'maps' 
+                      ? 'bg-green-500/30 border-green-400/50' 
+                      : 'bg-green-500/10 border-green-400/20 hover:bg-green-500/20'
+                  }`}
+                  title="Maps mode"
+                >
+                  🗺️
+                </button>
+                <button
                   onClick={() => setCurrentMode('profile')}
                   className={`p-2 border rounded-lg text-sm transition-colors ${
                     currentMode === 'profile' 
@@ -1413,7 +1522,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         {/* Mode shortcuts */}
         <div className="mt-2 text-center">
           <span className="text-white/30 text-xs">
-            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⌘⇧C Calendar • ⌘⇧P Profile • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
+            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⌘⇧C Calendar • 🗺️ Maps • ⌘⇧P Profile • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
           </span>
         </div>
       </div>
