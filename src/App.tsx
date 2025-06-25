@@ -1488,6 +1488,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                 isSearching={isSearchingMaps}
                 userLocation={userLocation || undefined}
                 className="mb-4"
+                style={{ height: 250, maxHeight: 300 }}
               />
             </div>
 
