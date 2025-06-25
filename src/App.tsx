@@ -361,64 +361,48 @@ function App() {
       await sendMessage(query)
     }
   }
+  // Replace the debug useEffect with this clean version:
 
-  // Listen for Drive mode toggle
   useEffect(() => {
     console.log('Setting up Drive mode toggle listener...')
-    console.log('window.electronAPI?.onToggleDriveMode exists:', !!window.electronAPI?.onToggleDriveMode)
     
     if (window.electronAPI?.onToggleDriveMode) {
       const handleToggleDriveMode = () => {
         console.log('🎯 Drive mode toggle received from main process')
-        // Show window if it's hidden
+        setCurrentMode('drive')
+        
+        // Ensure window is visible and focused
         if (window.electronAPI?.showWindow) {
           window.electronAPI.showWindow()
         }
-        console.log('Current mode before toggle:', currentMode)
-        setCurrentMode(prev => {
-          const newMode = prev === 'drive' ? 'chat' : 'drive'
-          console.log('Switching from', prev, 'to', newMode)
-          return newMode
-        })
       }
       
       window.electronAPI.onToggleDriveMode(handleToggleDriveMode)
       console.log('✅ Drive mode toggle listener set up successfully')
       
-      // Return cleanup function
       return () => {
         console.log('Cleaning up Drive mode toggle listener')
-        // Note: We can't actually remove the listener with the current API, but this is good practice
       }
     } else {
       console.log('❌ window.electronAPI?.onToggleDriveMode not available')
     }
-
-    if (window.electronAPI?.onDriveSyncProgress) {
-      window.electronAPI.onDriveSyncProgress((progress) => {
-        setSyncProgress(progress)
-      })
-    }
   }, []) // Remove currentMode from dependencies
 
-  // Keyboard shortcuts
+  // Keep your keyboard shortcut handler as is:
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+Shift+D for Drive mode (show window and switch to drive mode)
+      // Cmd+Shift+D for Drive mode
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
         console.log('Cmd+Shift+D pressed in React component')
         e.preventDefault()
+        setCurrentMode('drive')
         
-        // Always allow switching to drive mode, but show sign-in prompt if not authenticated
-        setCurrentMode(prev => prev === 'drive' ? 'chat' : 'drive')
-        
-        // Show window if it's hidden
         if (window.electronAPI?.showWindow) {
           window.electronAPI.showWindow()
         }
       }
       
-      // Cmd+Enter to toggle between modes
+      // Cmd+Enter to cycle through modes (only if authenticated)
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
         if (user && driveConnection.isConnected) {
@@ -427,6 +411,8 @@ function App() {
             const currentIndex = modes.indexOf(prev)
             return modes[(currentIndex + 1) % modes.length]
           })
+        } else {
+          setCurrentMode('drive')
         }
       }
       
@@ -439,6 +425,11 @@ function App() {
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [user, driveConnection])
+
+  // Debug: Add this useEffect to log mode changes
+  useEffect(() => {
+    console.log('🔄 Mode changed to:', currentMode)
+  }, [currentMode])
 
   // Render mode content
   const renderModeContent = () => {

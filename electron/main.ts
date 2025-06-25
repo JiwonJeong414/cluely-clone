@@ -1,7 +1,12 @@
 // electron/main.ts - Simplified version without service imports
 import { app, BrowserWindow, ipcMain, globalShortcut, screen, desktopCapturer } from 'electron'
 import { join } from 'path'
-// Add back basic imports
+// Add back full service imports at the top
+import { DatabaseService } from '../src/database/DatabaseService'
+import { AuthService } from '../src/services/auth/AuthService'
+import { DriveService } from '../src/services/drive/DriveService'
+import { VectorService } from '../src/services/vector/VectorService'
+import { OrganizationService } from '../src/services/organization/OrganizationService'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -11,43 +16,48 @@ const isDev = process.env.NODE_ENV === 'development'
 let mainWindow: BrowserWindow | null = null
 let isWindowVisible = false
 
-// Add back database and auth services
-let dbService: any
-let authService: any
+// Update service initialization
+let dbService: DatabaseService
+let authService: AuthService
+let driveService: DriveService
+let vectorService: VectorService
+let organizationService: OrganizationService
 
 async function initializeServices() {
   try {
     console.log('Initializing services...')
     
     // Initialize database service first
-    if (isDev) {
-      const { DatabaseService } = require('../src/database/DatabaseService')
-      const { AuthService } = require('../src/services/auth/AuthService')
-      
-      dbService = DatabaseService.getInstance()
-      await dbService.initialize()
-      console.log('✅ Database service initialized')
-      
-      authService = AuthService.getInstance()
-      await authService.loadUserFromStorage()
-      console.log('✅ Auth service initialized')
+    dbService = DatabaseService.getInstance()
+    await dbService.initialize()
+    console.log('✅ Database service initialized')
+    
+    // Initialize auth service
+    authService = AuthService.getInstance()
+    await authService.loadUserFromStorage()
+    console.log('✅ Auth service initialized')
+    
+    // Initialize drive service
+    driveService = DriveService.getInstance()
+    console.log('✅ Drive service initialized')
+    
+    // Initialize vector service
+    vectorService = VectorService.getInstance()
+    const hasEmbeddingModel = await vectorService.checkEmbeddingModel()
+    if (hasEmbeddingModel) {
+      console.log('✅ Vector service initialized with embedding model')
     } else {
-      const { DatabaseService } = require('./database/DatabaseService.js')
-      const { AuthService } = require('./services/auth/AuthService.js')
-      
-      dbService = DatabaseService.getInstance()
-      await dbService.initialize()
-      console.log('✅ Database service initialized')
-      
-      authService = AuthService.getInstance()
-      await authService.loadUserFromStorage()
-      console.log('✅ Auth service initialized')
+      console.log('⚠️ Vector service initialized but no embedding model found')
     }
     
-    console.log('✅ Services initialized successfully')
+    // Initialize organization service
+    organizationService = new OrganizationService(driveService, dbService)
+    console.log('✅ Organization service initialized')
+    
+    console.log('✅ All services initialized successfully')
   } catch (error) {
     console.error('❌ Failed to initialize services:', error)
-    console.log('📝 Running in basic mode without advanced features')
+    throw error
   }
 }
 
@@ -193,14 +203,37 @@ function registerGlobalShortcuts() {
     // Try to register the primary drive mode shortcut
     const driveModeRegistered = globalShortcut.register(driveModeShortcut, async () => {
       console.log('🚀 Drive mode shortcut triggered')
+      
       if (mainWindow) {
-        // Always send the toggle event, let the renderer handle authentication
-        console.log('📤 Sending toggle-drive-mode event to renderer')
-        mainWindow.webContents.send('toggle-drive-mode')
-        
-        // Show window and focus it
-        mainWindow.show()
-        mainWindow.focus()
+        // Check if window exists and webContents is ready
+        if (mainWindow.webContents) {
+          console.log('📤 Sending toggle-drive-mode event to renderer')
+          
+          // Send the event
+          mainWindow.webContents.send('toggle-drive-mode')
+          
+          // Show and focus the window
+          if (!mainWindow.isVisible()) {
+            console.log('🔍 Window was hidden, showing it')
+            mainWindow.show()
+          }
+          
+          if (!mainWindow.isFocused()) {
+            console.log('🎯 Window was not focused, focusing it')
+            mainWindow.focus()
+          }
+          
+          // Bring to front on macOS
+          if (process.platform === 'darwin') {
+            app.focus({ steal: true })
+          }
+          
+          console.log('✅ Drive mode toggle completed')
+        } else {
+          console.error('❌ Window webContents not available')
+        }
+      } else {
+        console.error('❌ Main window not available')
       }
     })
     console.log('Drive mode shortcut registration:', driveModeRegistered ? 'SUCCESS' : 'FAILED')
@@ -441,46 +474,313 @@ ipcMain.handle('auth-get-drive-connection', async () => {
   }
 })
 
-ipcMain.handle('drive-sync', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Replace all the stub Drive IPC handlers with these working ones:
+
+// Drive sync handler
+ipcMain.handle('drive-sync', async (event, options = {}) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('🚀 Starting Drive sync...')
+    
+    const result = await driveService.syncFiles(
+      (progress) => {
+        // Send progress updates to renderer
+        if (mainWindow) {
+          mainWindow.webContents.send('drive-sync-progress', progress)
+        }
+      },
+      options.limit || 10
+    )
+    
+    console.log('✅ Drive sync completed:', result)
+    return { success: true, result }
+  } catch (error) {
+    console.error('❌ Drive sync error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Sync failed' 
+    }
+  }
 })
 
-ipcMain.handle('drive-search', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Drive search handler
+ipcMain.handle('drive-search', async (event, query, limit = 5) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log(`🔍 Searching Drive for: "${query}"`)
+    
+    const results = await driveService.searchDocuments(query, limit)
+    
+    console.log(`✅ Found ${results.length} results`)
+    return { success: true, results }
+  } catch (error) {
+    console.error('❌ Drive search error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Search failed' 
+    }
+  }
 })
 
-ipcMain.handle('drive-list-files', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Drive list files handler
+ipcMain.handle('drive-list-files', async (event, options = {}) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    const files = await driveService.listFiles(options)
+    return { success: true, files }
+  } catch (error) {
+    console.error('❌ Drive list files error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'List files failed' 
+    }
+  }
 })
 
-ipcMain.handle('drive-delete-file', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Drive delete file handler
+ipcMain.handle('drive-delete-file', async (event, fileId) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    await driveService.deleteFile(fileId)
+    console.log(`✅ Deleted file: ${fileId}`)
+    return { success: true }
+  } catch (error) {
+    console.error(`❌ Drive delete file error:`, error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Delete failed' 
+    }
+  }
 })
 
-ipcMain.handle('drive-delete-files', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Drive delete multiple files handler
+ipcMain.handle('drive-delete-files', async (event, fileIds) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    const results = []
+    let successCount = 0
+    let errorCount = 0
+    
+    for (const fileId of fileIds) {
+      try {
+        await driveService.deleteFile(fileId)
+        results.push({ fileId, success: true })
+        successCount++
+      } catch (error) {
+        results.push({ 
+          fileId, 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Delete failed' 
+        })
+        errorCount++
+      }
+    }
+    
+    // Log cleanup activity
+    await dbService.logCleanupActivity(user.id, {
+      filesDeleted: successCount,
+      filesRequested: fileIds.length,
+      errors: errorCount,
+      deletedFileNames: fileIds // This should ideally be file names, but we have IDs
+    })
+    
+    console.log(`✅ Deleted ${successCount}/${fileIds.length} files`)
+    return { 
+      success: true, 
+      results,
+      summary: { total: fileIds.length, deleted: successCount, errors: errorCount }
+    }
+  } catch (error) {
+    console.error('❌ Drive delete files error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Bulk delete failed' 
+    }
+  }
 })
 
-ipcMain.handle('drive-create-folder', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Drive create folder handler
+ipcMain.handle('drive-create-folder', async (event, name) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    const folderId = await driveService.createFolder(name)
+    console.log(`✅ Created folder: ${name} (${folderId})`)
+    return { success: true, folderId }
+  } catch (error) {
+    console.error('❌ Drive create folder error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Create folder failed' 
+    }
+  }
 })
 
-ipcMain.handle('drive-move-file', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Drive move file handler
+ipcMain.handle('drive-move-file', async (event, fileId, folderId) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    await driveService.moveFileToFolder(fileId, folderId)
+    console.log(`✅ Moved file ${fileId} to folder ${folderId}`)
+    return { success: true }
+  } catch (error) {
+    console.error('❌ Drive move file error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Move file failed' 
+    }
+  }
 })
 
-ipcMain.handle('drive-organize-files', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Drive organize files handler
+ipcMain.handle('drive-organize-files', async (event, plan) => {
+  try {
+    if (!organizationService) {
+      return { success: false, error: 'Organization service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('🗂️ Starting file organization...')
+    const result = await organizationService.executeOrganization(user.id, plan)
+    
+    console.log('✅ File organization completed:', result)
+    return { success: true, result }
+  } catch (error) {
+    console.error('❌ Drive organize files error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Organization failed' 
+    }
+  }
 })
 
-ipcMain.handle('drive-analyze-for-organization', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Drive analyze for organization handler
+ipcMain.handle('drive-analyze-for-organization', async (event, options = {}) => {
+  try {
+    if (!organizationService) {
+      return { success: false, error: 'Organization service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('🔍 Analyzing files for organization...')
+    const analysis = await organizationService.analyzeForOrganization(user.id, options)
+    
+    console.log(`✅ Analysis completed: ${analysis.clusters.length} clusters found`)
+    return { success: true, analysis }
+  } catch (error) {
+    console.error('❌ Drive analyze error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Analysis failed' 
+    }
+  }
 })
 
+// Database get indexed files handler
 ipcMain.handle('db-get-indexed-files', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+  try {
+    if (!vectorService) {
+      return { success: false, error: 'Vector service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    const files = await vectorService.getUserIndexedFiles(user.id)
+    return { success: true, files }
+  } catch (error) {
+    console.error('❌ Get indexed files error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Get indexed files failed' 
+    }
+  }
 })
 
-ipcMain.handle('db-get-cleanup-candidates', async () => {
-  return { success: false, error: 'Drive features not implemented yet' }
+// Database get cleanup candidates handler
+ipcMain.handle('db-get-cleanup-candidates', async (event, maxFiles = 50) => {
+  try {
+    if (!dbService) {
+      return { success: false, error: 'Database service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    const candidates = await dbService.getCleanupCandidates(user.id, maxFiles)
+    return { success: true, candidates }
+  } catch (error) {
+    console.error('❌ Get cleanup candidates error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Get cleanup candidates failed' 
+    }
+  }
 })
