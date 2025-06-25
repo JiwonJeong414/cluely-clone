@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Mic, MicOff, Loader2 } from 'lucide-react'
 
 interface AudioButtonProps {
-  onAudioProcessed?: (response: string) => void
+  onAudioProcessed?: (transcription: string) => void
   className?: string
 }
 
@@ -10,14 +10,12 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([])
   const [status, setStatus] = useState<string>('')
 
   const handleStartRecording = async () => {
     try {
       setStatus('Starting recording...')
       setIsRecording(true)
-      setAudioChunks([])
 
       // Get user media with microphone
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -45,7 +43,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
 
       recorder.onstop = async () => {
         try {
-          setStatus('Processing audio...')
+          setStatus('Transcribing audio...')
           setIsProcessing(true)
           
           const audioBlob = new Blob(chunks, { type: 'audio/webm' })
@@ -55,26 +53,26 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
             try {
               const base64Data = (reader.result as string).split(',')[1]
               
-              // Send to Gemini AI for analysis
-              const result = await window.electronAPI.audio.analyzeFromBase64(
+              // Only transcribe the audio, don't send to OpenAI for analysis
+              const result = await window.electronAPI.audio.transcribeFromBase64(
                 base64Data, 
                 'audio/webm'
               )
               
               if (result && 'text' in result) {
-                setStatus('Success!')
+                setStatus('Transcription complete!')
                 onAudioProcessed?.(result.text)
-                console.log('✅ Audio processed successfully:', result.text)
+                console.log('✅ Audio transcribed successfully:', result.text)
               } else if (result && 'success' in result && !result.success) {
-                setStatus('Processing failed')
-                console.error('❌ Audio processing failed:', result.error)
+                setStatus('Transcription failed')
+                console.error('❌ Audio transcription failed:', result.error)
               } else {
-                setStatus('Processing failed')
-                console.error('❌ Audio processing failed:', result)
+                setStatus('Transcription failed')
+                console.error('❌ Audio transcription failed:', result)
               }
             } catch (error) {
-              console.error('❌ Audio analysis error:', error)
-              setStatus('Analysis failed')
+              console.error('❌ Audio transcription error:', error)
+              setStatus('Transcription failed')
             } finally {
               setIsProcessing(false)
               setTimeout(() => setStatus(''), 3000)

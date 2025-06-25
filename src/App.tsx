@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { initializeOpenAI, getOpenAI, type ChatMessage } from './api/openai'
-import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, Place } from '../electron/preload'
+import type { User, GoogleConnection, SyncProgress, CleanupCandidate, OrganizationCluster, CalendarEvent, Place } from '../electron/preload'
 import { AuthButton } from './components/AuthButton'
 import { MapVisualization } from './components/MapVisualization'
 import { PlacesList } from './components/PlacesList'
@@ -24,6 +24,13 @@ interface Message {
   calendarContext?: string
 }
 
+// Add new state for pending captures
+interface PendingCapture {
+  type: 'screenshot' | 'audio'
+  data: string
+  timestamp: Date
+}
+
 type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar' | 'profile' | 'maps'
 type CalendarRange = 'today' | 'week' | 'next-week'
 
@@ -31,7 +38,6 @@ function App() {
   // Existing state
   const [appVersion, setAppVersion] = useState<string>('')
   const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [currentResponse, setCurrentResponse] = useState<Message | null>(null)
   const [streamingText, setStreamingText] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -66,6 +72,15 @@ function App() {
   
   // Add state for sync stats
   const [syncStats, setSyncStats] = useState<any>(null)
+  
+  // Add new state for pending captures
+  const [pendingCapture, setPendingCapture] = useState<PendingCapture | null>(null)
+  const [contextedMessages, setContextedMessages] = useState<string>('')
+  
+  // Google Docs state
+  const [isCreatingNote, setIsCreatingNote] = useState(false)
+  const [docsNotification, setDocsNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [recentDocs, setRecentDocs] = useState<any[]>([])
   
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -117,6 +132,7 @@ function App() {
   useEffect(() => {
     if (user && googleConnection.isConnected) {
       refreshSyncStats()
+      loadRecentDocs() // Load recent Google Docs
     }
   }, [user, googleConnection.isConnected])
 
@@ -170,7 +186,12 @@ function App() {
       console.log('Setting up screenshot listener')
       window.electronAPI.onScreenshotCaptured((screenshot: string) => {
         console.log('📸 Screenshot received in React!', screenshot.substring(0, 50) + '...')
-        sendMessage("What do you see on my screen?", screenshot)
+        // Store the screenshot instead of immediately sending
+        setPendingCapture({
+          type: 'screenshot',
+          data: screenshot,
+          timestamp: new Date()
+        })
         if (currentMode !== 'chat') setCurrentMode('chat')
       })
     }
@@ -305,6 +326,7 @@ function App() {
   const handleDriveSearch = async (query: string) => {
     const isCalendar = isCalendarQuery(query)
     const isLocation = isLocationQuery(query)
+    const isAudio = isAudioQuery(query)
 
     // Only clear map state if this is NOT a location query
     if (!isLocation) {
@@ -313,6 +335,13 @@ function App() {
     }
 
     if (!user || !googleConnection.isConnected) {
+      await sendMessage(query)
+      return
+    }
+
+    // For audio queries, skip drive search and send directly to AI
+    if (isAudio) {
+      console.log('🎤 Audio query detected, skipping drive search')
       await sendMessage(query)
       return
     }
@@ -494,6 +523,20 @@ function App() {
     return calendarKeywords.some(keyword => lowerQuery.includes(keyword))
   }
 
+  const isAudioQuery = (query: string): boolean => {
+    const audioKeywords = [
+      'what is this guy saying', 'what did he say', 'what did she say',
+      'what are they saying', 'what is being said', 'what did they say',
+      'transcribe', 'transcription', 'what was said', 'what did the audio say',
+      'what did the recording say', 'what did the voice say', 'what did the person say',
+      'what is the audio about', 'what is the recording about', 'what is the voice about',
+      'what is the person talking about', 'what is being discussed', 'what is the conversation about'
+    ]
+    
+    const lowerQuery = query.toLowerCase()
+    return audioKeywords.some(keyword => lowerQuery.includes(keyword))
+  }
+
   const isLocationQuery = (query: string): boolean => {
     const locationKeywords = [
       'near me', 'nearby', 'closest', 'nearest', 'around here', 'close to me',
@@ -631,19 +674,25 @@ function App() {
 
   // Add smart suggestions based on calendar context
   const getSmartSuggestions = (): string[] => {
-    const currentHour = new Date().getHours()
-    const suggestions = []
+    const suggestions = [
+      "What's on my calendar today?",
+      "Show me my upcoming meetings",
+      "Find free time in my schedule",
+      "What documents do I have about...",
+      "Search my drive for...",
+      "Organize my files",
+      "Find nearby restaurants",
+      "How long to get to...",
+    ]
     
-    if (currentHour < 12) {
-      suggestions.push("What's on my agenda today?")
-      suggestions.push("Do I need to prepare for any meetings?")
-    } else {
-      suggestions.push("How does tomorrow look?")
-      suggestions.push("What's coming up this week?")
+    // Add calendar-specific suggestions if connected
+    if (googleConnection.isConnected) {
+      suggestions.push(
+        "Schedule a meeting",
+        "Find conflicts in my calendar",
+        "What's my availability this week?"
+      )
     }
-    
-    suggestions.push("When am I free for focused work?")
-    suggestions.push("Show me my busiest days")
     
     return suggestions
   }
@@ -655,14 +704,38 @@ function App() {
     driveContext?: any[], 
     calendarContext?: string
   ) => {
+    // Check if we have a pending capture and combine with user message
+    let finalMessage = userMessage
+    let finalScreenshot = screenshotDataUrl
+    let audioTranscription: string | null = null
+    
+    if (pendingCapture) {
+      if (pendingCapture.type === 'screenshot') {
+        finalScreenshot = pendingCapture.data
+        finalMessage = `${userMessage}\n\n[Screenshot captured at ${pendingCapture.timestamp.toLocaleTimeString()}]`
+      } else if (pendingCapture.type === 'audio') {
+        audioTranscription = pendingCapture.data
+        finalMessage = `${userMessage}\n\n[Audio transcription: "${pendingCapture.data}"]`
+        // Add audio context to the message
+        setContextedMessages(prev => prev + `\nAudio context: ${pendingCapture.data}`)
+      }
+      
+      // Clear the pending capture
+      setPendingCapture(null)
+    }
+
+    // Check if this is a "notes" request early
+    const isNotesRequest = finalMessage.toLowerCase().includes('notes') || finalMessage.toLowerCase().includes('save this')
+
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: userMessage,
+      content: finalMessage,
       timestamp: new Date(),
-      hasScreenshot: !!screenshotDataUrl,
-      screenshotUrl: screenshotDataUrl,
-      driveContext
+      hasScreenshot: !!finalScreenshot,
+      screenshotUrl: finalScreenshot,
+      // Don't include driveContext for screenshots
+      driveContext: finalScreenshot ? undefined : driveContext
     }
 
     setCurrentResponse(null)
@@ -672,6 +745,112 @@ function App() {
     setInputValue('')
 
     try {
+      // If this is a notes request, skip AI analysis and just create the note
+      if (isNotesRequest && googleConnection.isConnected && window.electronAPI?.docs) {
+        try {
+          setIsCreatingNote(true)
+          
+          if (finalScreenshot) {
+            // For screenshots, we still want AI analysis in the note
+            const openai = getOpenAI()
+            let screenshotAnalysis = ''
+            
+            // Get AI analysis of the screenshot
+            await openai.analyzeScreenshotStream(
+              finalScreenshot,
+              (chunk: string) => {
+                screenshotAnalysis += chunk
+              },
+              finalMessage
+            )
+            
+            // Create screenshot note with actual AI analysis
+            const title = `Screenshot Analysis - ${new Date().toLocaleDateString()}`
+            await window.electronAPI.docs.createScreenshotNote(
+              title,
+              finalScreenshot,
+              screenshotAnalysis,
+              finalMessage
+            )
+            console.log('✅ Screenshot note created in Google Docs')
+            showDocsNotification('success', 'Screenshot note created in Google Docs')
+          } else if (audioTranscription) {
+            // For audio, we want AI analysis of the transcription content
+            const openai = getOpenAI()
+            let audioAnalysis = ''
+            
+            // Get AI analysis of the audio transcription
+            const chatMessages: ChatMessage[] = [
+              {
+                role: 'system',
+                content: 'You are an AI assistant analyzing audio transcriptions. Provide insights, context, and analysis of the spoken content. Be helpful and actionable in your analysis.'
+              },
+              {
+                role: 'user',
+                content: `Please analyze this audio transcription and provide insights: "${audioTranscription}"`
+              }
+            ]
+            
+            await openai.sendMessageStream(chatMessages, (chunk: string) => {
+              audioAnalysis += chunk
+            })
+            
+            // Create audio note with actual AI analysis
+            const title = `Audio Note - ${new Date().toLocaleDateString()}`
+            await window.electronAPI.docs.createAudioNote(
+              title,
+              audioTranscription,
+              audioAnalysis,
+              0 // Duration not available
+            )
+            console.log('✅ Audio note created in Google Docs')
+            showDocsNotification('success', 'Audio note created in Google Docs')
+          } else {
+            // Create conversation note
+            const title = `Conversation Note - ${new Date().toLocaleDateString()}`
+            await window.electronAPI.docs.createConversationNote(
+              title,
+              `User: ${finalMessage}\n\nWingman: Note saved to Google Docs`,
+              "Note saved to Google Docs"
+            )
+            console.log('✅ Conversation note created in Google Docs')
+            showDocsNotification('success', 'Conversation note created in Google Docs')
+          }
+          
+          // Show simple "Google notes created!" response
+          const assistantMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: 'Google notes created!',
+            timestamp: new Date(),
+            // Don't include driveContext for screenshots
+            driveContext: finalScreenshot ? undefined : driveContext,
+            calendarContext
+          }
+          
+          setCurrentResponse(assistantMsg)
+          setStreamingText('')
+          setIsStreaming(false)
+          
+        } catch (error) {
+          console.error('❌ Failed to create note:', error)
+          showDocsNotification('error', 'Failed to create note')
+          
+          const errorMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: 'Failed to create Google notes. Please try again.',
+            timestamp: new Date()
+          }
+          setCurrentResponse(errorMsg)
+          setStreamingText('')
+          setIsStreaming(false)
+        } finally {
+          setIsCreatingNote(false)
+        }
+        return // Exit early for notes requests
+      }
+
       const openai = getOpenAI()
       
       // Build enhanced system prompt with calendar awareness
@@ -688,28 +867,19 @@ When calendar information is provided, use it to give specific, actionable advic
 
 Be conversational, helpful, and proactive in offering scheduling and productivity insights.`
       
-      if (screenshotDataUrl) {
+      let fullResponse = ''
+      
+      if (finalScreenshot) {
         // Use vision API with calendar context
-        let fullResponse = ''
         await openai.analyzeScreenshotStream(
-          screenshotDataUrl,
+          finalScreenshot,
           (chunk: string) => {
             fullResponse += chunk
             setStreamingText(fullResponse)
             requestAnimationFrame(() => updateDimensions())
           },
-          userMessage
+          finalMessage
         )
-        
-        const assistantMsg: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: fullResponse,
-          timestamp: new Date(),
-          driveContext
-        }
-
-        setCurrentResponse(assistantMsg)
       } else {
         // Regular text chat with enhanced context
         const chatMessages: ChatMessage[] = [
@@ -719,32 +889,30 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
           },
           {
             role: 'user',
-            content: userMessage
+            content: finalMessage
           }
         ]
         
-        let fullResponse = ''
         await openai.sendMessageStream(chatMessages, (chunk: string) => {
           fullResponse += chunk
           setStreamingText(fullResponse)
           requestAnimationFrame(() => updateDimensions())
         })
-        
-        const assistantMsg: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: fullResponse,
-          timestamp: new Date(),
-          driveContext,
-          calendarContext // Add calendar context to message
-        }
-
-        setCurrentResponse(assistantMsg)
       }
       
+      const assistantMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: fullResponse,
+        timestamp: new Date(),
+        // Don't include driveContext for screenshots
+        driveContext: finalScreenshot ? undefined : driveContext,
+        calendarContext // Add calendar context to message
+      }
+
+      setCurrentResponse(assistantMsg)
       setStreamingText('')
       setIsStreaming(false)
-      
     } catch (error) {
       console.error('Error sending message:', error)
       const errorMsg: Message = {
@@ -772,21 +940,41 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     
     const message = inputValue.trim()
     setInputValue('')
-    await sendMessage(message)
+    
+    // Check if this is a "notes" request with a pending capture
+    const isNotesRequest = message.toLowerCase().includes('notes') || message.toLowerCase().includes('save this')
+    
+    if (isNotesRequest && pendingCapture) {
+      // For notes requests with pending captures, skip drive search
+      await sendMessage(message)
+    } else {
+      // For all other requests, use the normal drive search flow
+      await handleDriveSearch(message)
+    }
   }
 
-  const handleAudioProcessed = async (response: string) => {
-    // Add the audio response as an assistant message
+  const handleAudioProcessed = async (transcription: string) => {
+    // Store the audio transcription instead of immediately sending to OpenAI
+    setPendingCapture({
+      type: 'audio',
+      data: transcription,
+      timestamp: new Date()
+    })
+    
+    // Add the transcription as a user message to show what was captured
     const audioMessage: Message = {
       id: Date.now().toString(),
-      role: 'assistant',
-      content: response,
+      role: 'user',
+      content: `[Audio captured: "${transcription}"]`,
       timestamp: new Date()
     }
     
     setCurrentResponse(audioMessage)
     setStreamingText('')
     setIsStreaming(false)
+    
+    // Don't automatically create Google Docs note - let user choose
+    // The user can now type their question or say "notes" to create a note
   }
 
   useEffect(() => {
@@ -1615,7 +1803,31 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     
     e.preventDefault()
     setIsDragging(true)
-    setDragStart({ x: e.clientX, y: e.clientY })
+  }
+
+  // Google Docs functions
+  const showDocsNotification = (type: 'success' | 'error', message: string) => {
+    setDocsNotification({ type, message })
+    setTimeout(() => setDocsNotification(null), 5000)
+  }
+
+  const loadRecentDocs = async () => {
+    if (!window.electronAPI?.docs || !googleConnection.isConnected) return
+    
+    try {
+      const result = await window.electronAPI.docs.listRecent(5)
+      if (result.success) {
+        setRecentDocs(result.documents || [])
+      }
+    } catch (error) {
+      console.error('Failed to load recent docs:', error)
+    }
+  }
+
+  const openGoogleDoc = (doc: any) => {
+    if (doc.webViewLink) {
+      window.open(doc.webViewLink, '_blank')
+    }
   }
 
   return (
@@ -1712,21 +1924,103 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                 >
                   👤
                 </button>
+                {googleConnection.isConnected && (
+                  <button
+                    onClick={loadRecentDocs}
+                    className="p-2 border rounded-lg text-sm transition-colors bg-yellow-500/10 border-yellow-400/20 hover:bg-yellow-500/20"
+                    title="View recent Google Docs"
+                  >
+                    📝
+                  </button>
+                )}
               </>
             )}
           </div>
         </div>
 
+        {/* Google Docs Notification */}
+        {docsNotification && (
+          <div className={`absolute top-16 right-4 z-50 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+            docsNotification.type === 'success' 
+              ? 'bg-green-500/20 border border-green-400/30 text-green-300' 
+              : 'bg-red-500/20 border border-red-400/30 text-red-300'
+          }`}>
+            {docsNotification.message}
+          </div>
+        )}
+
+        {/* Google Docs Creating Indicator */}
+        {isCreatingNote && (
+          <div className="absolute top-16 right-4 z-50 px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/20 border border-blue-400/30 text-blue-300 flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+            Creating Google Doc...
+          </div>
+        )}
+
+        {/* Recent Google Docs Popup */}
+        {recentDocs.length > 0 && (
+          <div className="absolute top-16 right-4 z-50 bg-black/95 border border-gray-600 rounded-lg p-3 min-w-64 max-w-80">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-white text-sm font-medium">Recent Google Docs</h3>
+              <button
+                onClick={() => setRecentDocs([])}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {recentDocs.map((doc) => (
+                <button
+                  key={doc.id}
+                  onClick={() => openGoogleDoc(doc)}
+                  className="w-full text-left p-2 rounded bg-gray-800/50 hover:bg-gray-700/50 transition-colors"
+                >
+                  <div className="text-white text-sm truncate">{doc.name}</div>
+                  <div className="text-gray-400 text-xs">
+                    {new Date(doc.modifiedTime).toLocaleDateString()}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Chat Input */}
         {currentMode === 'chat' && (
           <div className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
+            {/* Pending Capture Indicator */}
+            {pendingCapture && (
+              <div className="absolute -top-8 left-0 right-0 flex items-center justify-center">
+                <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-lg px-3 py-1 text-xs text-yellow-300 flex items-center gap-2">
+                  <span>
+                    {pendingCapture.type === 'screenshot' ? '📸 Screenshot captured' : '🎤 Audio transcribed'} - 
+                    Ask a question or type "notes" to save
+                  </span>
+                  <button
+                    onClick={() => setPendingCapture(null)}
+                    className="text-yellow-400 hover:text-yellow-200 transition-colors"
+                    title="Clear capture"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+            
             <input
               ref={inputRef}
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit(e))}
-              placeholder={googleConnection.isConnected ? "Ask about your Drive, calendar, or anything..." : "Type a message..."}
+              placeholder={
+                pendingCapture 
+                  ? (pendingCapture.type === 'screenshot' 
+                      ? "Ask about the screenshot or type 'notes' to save..." 
+                      : "Ask about the audio or type 'notes' to save...")
+                  : (googleConnection.isConnected ? "Ask about your Drive, calendar, or anything..." : "Type a message...")
+              }
               className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-32 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
               disabled={isLoading || isStreaming}
               autoFocus

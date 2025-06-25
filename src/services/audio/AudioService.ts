@@ -230,4 +230,37 @@ export class AudioService {
       throw error
     }
   }
+
+  async transcribeAudioFromBase64(data: string, mimeType: string): Promise<{ text: string; timestamp: number }> {
+    try {
+      const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
+      if (!apiKey) {
+        throw new Error('OpenAI API key not found')
+      }
+
+      // Convert base64 to ArrayBuffer
+      const binaryString = atob(data)
+      const bytes = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      const audioData = bytes.buffer
+
+      // Only transcribe the audio, don't send to OpenAI for analysis
+      const result = await this.transcribeAudio(audioData)
+      
+      if (!result.success || !result.text) {
+        throw new Error(result.error || 'Failed to transcribe audio')
+      }
+
+      return {
+        text: result.text,
+        timestamp: Date.now()
+      }
+
+    } catch (error) {
+      console.error('❌ Audio transcription error:', error)
+      throw error
+    }
+  }
 } 

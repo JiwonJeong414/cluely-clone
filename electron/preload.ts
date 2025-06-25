@@ -94,7 +94,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     processForInterview: (audioData: ArrayBuffer) => ipcRenderer.invoke('audio-process-for-interview', audioData),
     isCapturing: () => ipcRenderer.invoke('audio-is-capturing'),
     analyzeFromBase64: (data: string, mimeType: string) => ipcRenderer.invoke('analyze-audio-base64', data, mimeType),
+    transcribeFromBase64: (data: string, mimeType: string) => ipcRenderer.invoke('transcribe-audio-base64', data, mimeType),
     analyzeFile: (path: string) => ipcRenderer.invoke('analyze-audio-file', path),
+  },
+
+  // Google Docs operations
+  docs: {
+    createNote: (noteContent: any) => ipcRenderer.invoke('docs-create-note', noteContent),
+    createScreenshotNote: (title: string, screenshotUrl: string, aiAnalysis: string, userQuestion?: string) => 
+      ipcRenderer.invoke('docs-create-screenshot-note', title, screenshotUrl, aiAnalysis, userQuestion),
+    createAudioNote: (title: string, transcription: string, aiAnalysis: string, audioDuration?: number) => 
+      ipcRenderer.invoke('docs-create-audio-note', title, transcription, aiAnalysis, audioDuration),
+    createConversationNote: (title: string, conversation: string, aiSummary?: string) => 
+      ipcRenderer.invoke('docs-create-conversation-note', title, conversation, aiSummary),
+    appendToNote: (documentId: string, content: string) => ipcRenderer.invoke('docs-append-to-note', documentId, content),
+    listRecent: (limit?: number) => ipcRenderer.invoke('docs-list-recent', limit),
+    getDoc: (documentId: string) => ipcRenderer.invoke('docs-get-doc', documentId),
   },
 
   // Debug operations
@@ -334,7 +349,19 @@ export interface ElectronAPI {
       Promise<{ success: boolean; response?: string; error?: string }>
     isCapturing: () => Promise<boolean>
     analyzeFromBase64: (data: string, mimeType: string) => Promise<{ text: string; timestamp: number } | { success: false; error: string }>
+    transcribeFromBase64: (data: string, mimeType: string) => Promise<{ text: string; timestamp: number } | { success: false; error: string }>
     analyzeFile: (path: string) => Promise<{ text: string; timestamp: number } | { success: false; error: string }>
+  }
+
+  // Google Docs
+  docs: {
+    createNote: (noteContent: any) => Promise<{ success: boolean; documentId?: string; error?: string }>
+    createScreenshotNote: (title: string, screenshotUrl: string, aiAnalysis: string, userQuestion?: string) => Promise<{ success: boolean; documentId?: string; error?: string }>
+    createAudioNote: (title: string, transcription: string, aiAnalysis: string, audioDuration?: number) => Promise<{ success: boolean; documentId?: string; error?: string }>
+    createConversationNote: (title: string, conversation: string, aiSummary?: string) => Promise<{ success: boolean; documentId?: string; error?: string }>
+    appendToNote: (documentId: string, content: string) => Promise<{ success: boolean; error?: string }>
+    listRecent: (limit?: number) => Promise<{ success: boolean; documents?: any[]; error?: string }>
+    getDoc: (documentId: string) => Promise<{ success: boolean; document?: any; error?: string }>
   }
 
   // Debug operations
