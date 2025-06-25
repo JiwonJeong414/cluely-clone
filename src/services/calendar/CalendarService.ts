@@ -50,6 +50,23 @@ export interface CalendarInsight {
   actionable?: boolean
 }
 
+export interface CreateEventRequest {
+  summary: string
+  description?: string
+  start: {
+    dateTime?: string
+    date?: string
+    timeZone?: string
+  }
+  end: {
+    dateTime?: string
+    date?: string
+    timeZone?: string
+  }
+  location?: string
+  attendees?: string[] // Array of email addresses
+}
+
 export class CalendarService {
   private static instance: CalendarService
   private authService: AuthService
@@ -582,6 +599,57 @@ export class CalendarService {
     } catch (error) {
       console.error('❌ Calendar connection test failed:', error)
       return false
+    }
+  }
+
+  async createEvent(eventData: CreateEventRequest): Promise<CalendarEvent> {
+    if (!this.calendar) this.initializeCalendar()
+
+    try {
+      // Prepare the event object for Google Calendar API
+      const event = {
+        summary: eventData.summary,
+        description: eventData.description,
+        start: eventData.start,
+        end: eventData.end,
+        location: eventData.location,
+        attendees: eventData.attendees?.map(email => ({ email })),
+        // Set default timezone if not provided
+        timeZone: eventData.start.timeZone || 'America/New_York'
+      }
+
+      console.log('📅 Creating calendar event:', {
+        summary: event.summary,
+        start: event.start,
+        end: event.end,
+        location: event.location,
+        attendeesCount: event.attendees?.length || 0
+      })
+
+      const response = await this.calendar.events.insert({
+        calendarId: 'primary',
+        resource: event,
+        sendUpdates: 'all' // Send email notifications to attendees
+      })
+
+      const createdEvent = this.formatEvent(response.data)
+      
+      console.log('✅ Calendar event created successfully:', {
+        id: createdEvent.id,
+        summary: createdEvent.summary,
+        htmlLink: createdEvent.htmlLink
+      })
+
+      // Update calendar sync time
+      const user = this.authService.getCurrentUser()
+      if (user) {
+        await this.db.updateCalendarSyncTime(user.id)
+      }
+
+      return createdEvent
+    } catch (error) {
+      console.error('❌ Error creating calendar event:', error)
+      throw error
     }
   }
 }

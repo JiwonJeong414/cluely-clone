@@ -60,7 +60,7 @@ export class AuthService {
           'email',
           'profile',
           'https://www.googleapis.com/auth/drive',
-          'https://www.googleapis.com/auth/calendar.readonly',
+          'https://www.googleapis.com/auth/calendar',
           'https://www.googleapis.com/auth/documents' // Google Docs API scope
         ]
 

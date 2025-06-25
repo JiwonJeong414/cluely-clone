@@ -81,8 +81,28 @@ function App() {
   const [isCreatingNote, setIsCreatingNote] = useState(false)
   const [docsNotification, setDocsNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   
+  // Add state for creating events
+  const [isCreatingEvent, setIsCreatingEvent] = useState(false)
+  const [showCreateEventForm, setShowCreateEventForm] = useState(false)
+  const [newEvent, setNewEvent] = useState({
+    summary: '',
+    description: '',
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
+    location: '',
+    attendees: ''
+  })
+  
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Google Docs functions
+  const showDocsNotification = (type: 'success' | 'error', message: string) => {
+    setDocsNotification({ type, message })
+    setTimeout(() => setDocsNotification(null), 5000)
+  }
 
   // Set up sync progress listener ONCE on mount
   useEffect(() => {
@@ -176,6 +196,82 @@ function App() {
   const handleCalendarRangeChange = (range: CalendarRange) => {
     setSelectedCalendarRange(range)
     loadCalendarEvents(range)
+  }
+
+  // Create calendar event
+  const handleCreateEvent = async () => {
+    if (!window.electronAPI?.calendar || !user || !googleConnection.isConnected) {
+      return
+    }
+
+    // Validate required fields
+    if (!newEvent.summary.trim() || !newEvent.startDate || !newEvent.startTime) {
+      alert('Please fill in the event title, start date, and start time.')
+      return
+    }
+
+    setIsCreatingEvent(true)
+    try {
+      // Parse dates and times
+      const startDateTime = new Date(`${newEvent.startDate}T${newEvent.startTime}`)
+      const endDateTime = newEvent.endDate && newEvent.endTime 
+        ? new Date(`${newEvent.endDate}T${newEvent.endTime}`)
+        : new Date(startDateTime.getTime() + 60 * 60 * 1000) // Default 1 hour duration
+
+      // Parse attendees (comma-separated emails)
+      const attendees = newEvent.attendees
+        .split(',')
+        .map(email => email.trim())
+        .filter(email => email && email.includes('@'))
+
+      const eventData = {
+        summary: newEvent.summary.trim(),
+        description: newEvent.description.trim() || undefined,
+        start: {
+          dateTime: startDateTime.toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        end: {
+          dateTime: endDateTime.toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        location: newEvent.location.trim() || undefined,
+        attendees: attendees.length > 0 ? attendees : undefined
+      }
+
+      const result = await window.electronAPI.calendar.createEvent(eventData)
+      
+      if (result.success && result.event) {
+        console.log('✅ Event created successfully:', result.event)
+        
+        // Reset form
+        setNewEvent({
+          summary: '',
+          description: '',
+          startDate: '',
+          startTime: '',
+          endDate: '',
+          endTime: '',
+          location: '',
+          attendees: ''
+        })
+        setShowCreateEventForm(false)
+        
+        // Refresh calendar events
+        loadCalendarEvents(selectedCalendarRange)
+        
+        // Show success message
+        alert(`Event "${result.event.summary}" created successfully!`)
+      } else {
+        console.error('❌ Failed to create event:', result.error)
+        alert(`Failed to create event: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('❌ Error creating event:', error)
+      alert(`Error creating event: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsCreatingEvent(false)
+    }
   }
 
   // Listen for global screenshot capture
@@ -1373,7 +1469,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
 
       case 'calendar':
         return (
-          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+          <div className="p-4 max-h-96 overflow-y-auto custom-scrollbar" style={{ WebkitAppRegion: 'no-drag' }}>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-white font-medium">Calendar</h3>
@@ -1411,7 +1507,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
               
               {/* Calendar Events */}
               {!isLoadingCalendar && calendarEvents.length > 0 && (
-                <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
                   <div className="text-white/60 text-xs mb-2">
                     {calendarEvents.length} event{calendarEvents.length !== 1 ? 's' : ''} found
                   </div>
@@ -1458,14 +1554,140 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
               
               {/* No events */}
               {!isLoadingCalendar && calendarEvents.length === 0 && (
-                <div className="text-center text-white/60 py-8">
-                  <div className="text-4xl mb-3">📅</div>
+                <div className="text-center text-white/60 py-4">
+                  <div className="text-2xl mb-2">📅</div>
                   <div>No events found for {selectedCalendarRange === 'today' ? 'today' : selectedCalendarRange === 'week' ? 'this week' : 'next week'}</div>
-                  <div className="text-sm mt-2">Your schedule is clear!</div>
+                  <div className="text-sm mt-1">Your schedule is clear!</div>
                 </div>
               )}
               
-              <div className="pt-2 border-t border-purple-500/10">
+              {/* Create Event Form */}
+              {showCreateEventForm && (
+                <div className="bg-purple-500/10 border border-purple-400/20 rounded-lg p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-white font-medium text-sm">Create New Event</h4>
+                    <button
+                      onClick={() => setShowCreateEventForm(false)}
+                      className="text-purple-300 hover:text-white transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    {/* Event Title */}
+                    <div>
+                      <label className="block text-white/70 text-xs mb-1">Event Title *</label>
+                      <input
+                        type="text"
+                        value={newEvent.summary}
+                        onChange={(e) => setNewEvent(prev => ({ ...prev, summary: e.target.value }))}
+                        placeholder="Meeting with team"
+                        className="w-full bg-purple-500/10 border border-purple-400/20 rounded px-2 py-1.5 text-white placeholder-white/40 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                      />
+                    </div>
+                    
+                    {/* Description */}
+                    <div>
+                      <label className="block text-white/70 text-xs mb-1">Description</label>
+                      <textarea
+                        value={newEvent.description}
+                        onChange={(e) => setNewEvent(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Optional description..."
+                        rows={2}
+                        className="w-full bg-purple-500/10 border border-purple-400/20 rounded px-2 py-1.5 text-white placeholder-white/40 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400/50 resize-none"
+                      />
+                    </div>
+                    
+                    {/* Date and Time */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-white/70 text-xs mb-1">Start Date *</label>
+                        <input
+                          type="date"
+                          value={newEvent.startDate}
+                          onChange={(e) => setNewEvent(prev => ({ ...prev, startDate: e.target.value }))}
+                          className="w-full bg-purple-500/10 border border-purple-400/20 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-white/70 text-xs mb-1">Start Time *</label>
+                        <input
+                          type="time"
+                          value={newEvent.startTime}
+                          onChange={(e) => setNewEvent(prev => ({ ...prev, startTime: e.target.value }))}
+                          className="w-full bg-purple-500/10 border border-purple-400/20 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-white/70 text-xs mb-1">End Date</label>
+                        <input
+                          type="date"
+                          value={newEvent.endDate}
+                          onChange={(e) => setNewEvent(prev => ({ ...prev, endDate: e.target.value }))}
+                          className="w-full bg-purple-500/10 border border-purple-400/20 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-white/70 text-xs mb-1">End Time</label>
+                        <input
+                          type="time"
+                          value={newEvent.endTime}
+                          onChange={(e) => setNewEvent(prev => ({ ...prev, endTime: e.target.value }))}
+                          className="w-full bg-purple-500/10 border border-purple-400/20 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Location */}
+                    <div>
+                      <label className="block text-white/70 text-xs mb-1">Location</label>
+                      <input
+                        type="text"
+                        value={newEvent.location}
+                        onChange={(e) => setNewEvent(prev => ({ ...prev, location: e.target.value }))}
+                        placeholder="Office, Zoom, or address"
+                        className="w-full bg-purple-500/10 border border-purple-400/20 rounded px-2 py-1.5 text-white placeholder-white/40 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                      />
+                    </div>
+                    
+                    {/* Attendees */}
+                    <div>
+                      <label className="block text-white/70 text-xs mb-1">Attendees</label>
+                      <input
+                        type="text"
+                        value={newEvent.attendees}
+                        onChange={(e) => setNewEvent(prev => ({ ...prev, attendees: e.target.value }))}
+                        placeholder="email1@example.com, email2@example.com"
+                        className="w-full bg-purple-500/10 border border-purple-400/20 rounded px-2 py-1.5 text-white placeholder-white/40 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                      />
+                      <div className="text-white/50 text-xs mt-1">Separate multiple emails with commas</div>
+                    </div>
+                    
+                    {/* Create Button */}
+                    <button
+                      onClick={handleCreateEvent}
+                      disabled={isCreatingEvent || !newEvent.summary.trim() || !newEvent.startDate || !newEvent.startTime}
+                      className="w-full px-3 py-2 bg-purple-500 hover:bg-purple-600 disabled:bg-purple-500/30 disabled:cursor-not-allowed text-white rounded text-sm transition-colors font-medium"
+                    >
+                      {isCreatingEvent ? 'Creating...' : 'Create Event'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              <div className="pt-2 border-t border-purple-500/10 space-y-2">
+                {!showCreateEventForm && (
+                  <button
+                    onClick={() => setShowCreateEventForm(true)}
+                    className="w-full px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/30 rounded text-sm text-white transition-colors"
+                  >
+                    ➕ Create New Event
+                  </button>
+                )}
                 <button
                   onClick={() => setCurrentMode('chat')}
                   className="w-full px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/30 rounded text-sm text-white transition-colors"
@@ -1801,12 +2023,6 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     
     e.preventDefault()
     setIsDragging(true)
-  }
-
-  // Google Docs functions
-  const showDocsNotification = (type: 'success' | 'error', message: string) => {
-    setDocsNotification({ type, message })
-    setTimeout(() => setDocsNotification(null), 5000)
   }
 
   return (

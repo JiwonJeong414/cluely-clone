@@ -1167,6 +1167,33 @@ ipcMain.handle('calendar-get-context', async (event, query: string) => {
   }
 })
 
+// Calendar create event handler
+ipcMain.handle('calendar-create-event', async (event, eventData: any) => {
+  try {
+    if (!calendarService) {
+      return { success: false, error: 'Calendar service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log(`📅 Creating calendar event: "${eventData.summary}"`)
+    
+    const createdEvent = await calendarService.createEvent(eventData)
+    
+    console.log(`✅ Calendar event created successfully: ${createdEvent.id}`)
+    return { success: true, event: createdEvent }
+  } catch (error) {
+    console.error('❌ Calendar create event error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to create calendar event' 
+    }
+  }
+})
+
 // Maps search handler
 ipcMain.handle('maps-search', async (event, query: string, options?: any) => {
   try {

@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getNextWeek: () => ipcRenderer.invoke('calendar-get-next-week'),
     analyze: (query: string) => ipcRenderer.invoke('calendar-analyze', query),
     getContext: (query: string) => ipcRenderer.invoke('calendar-get-context', query),
+    createEvent: (eventData: CreateEventRequest) => ipcRenderer.invoke('calendar-create-event', eventData),
   },
 
   // Maps operations
@@ -257,6 +258,23 @@ export interface CalendarAnalysis {
   summary: string
 }
 
+export interface CreateEventRequest {
+  summary: string
+  description?: string
+  start: {
+    dateTime?: string
+    date?: string
+    timeZone?: string
+  }
+  end: {
+    dateTime?: string
+    date?: string
+    timeZone?: string
+  }
+  location?: string
+  attendees?: string[] // Array of email addresses
+}
+
 export interface Place {
   placeId: string
   name: string
@@ -329,6 +347,7 @@ export interface ElectronAPI {
     getNextWeek: () => Promise<{ success: boolean; events?: CalendarEvent[]; error?: string }>
     analyze: (query: string) => Promise<{ success: boolean; analysis?: CalendarAnalysis; error?: string }>
     getContext: (query: string) => Promise<{ success: boolean; context?: string; error?: string }>
+    createEvent: (eventData: CreateEventRequest) => Promise<{ success: boolean; event?: CalendarEvent; error?: string }>
   }
 
   // Maps
