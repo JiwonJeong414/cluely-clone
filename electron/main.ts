@@ -1092,27 +1092,76 @@ ipcMain.handle('maps-search', async (event, query: string, options?: any) => {
     let location = options?.location
     if (!location) {
       try {
+        console.log('📍 Requesting location from renderer process...')
         const locationResult = await event.sender.executeJavaScript(`
           new Promise((resolve, reject) => {
+            console.log('🌍 Checking geolocation support...');
+            
             if (!navigator.geolocation) {
+              console.error('❌ Geolocation not supported');
               reject(new Error('Geolocation not supported'));
               return;
             }
+            
+            console.log('✅ Geolocation supported, requesting position...');
+            
             navigator.geolocation.getCurrentPosition(
-              (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
-              (error) => reject(error),
-              { enableHighAccuracy: true, timeout: 10000 }
+              (position) => {
+                console.log('✅ Location obtained:', position.coords);
+                resolve({ 
+                  lat: position.coords.latitude, 
+                  lng: position.coords.longitude 
+                });
+              },
+              (error) => {
+                console.error('❌ Geolocation error:', error);
+                console.error('Error code:', error.code);
+                console.error('Error message:', error.message);
+                
+                // Provide more specific error messages
+                let errorMessage = 'Failed to get location: ';
+                switch(error.code) {
+                  case 1: // PERMISSION_DENIED
+                    errorMessage += 'Location permission denied. Please enable location access in your browser settings.';
+                    break;
+                  case 2: // POSITION_UNAVAILABLE
+                    errorMessage += 'Location unavailable. Please check your GPS or internet connection.';
+                    break;
+                  case 3: // TIMEOUT
+                    errorMessage += 'Location request timed out. Please try again.';
+                    break;
+                  default:
+                    errorMessage += error.message;
+                }
+                
+                reject(new Error(errorMessage));
+              },
+              { 
+                enableHighAccuracy: true, 
+                timeout: 15000, // Increased timeout
+                maximumAge: 300000 // Allow cached location up to 5 minutes old
+              }
             );
           });
         `)
+        
         location = locationResult
         console.log('📍 Got location from renderer:', location)
       } catch (locationError) {
         console.error('❌ Failed to get location:', locationError)
+        
+        // Return more helpful error message
         return { 
           success: false, 
-          error: 'Failed to get your location. Please enable location access and try again.' 
+          error: `Location access required for maps search. ${locationError instanceof Error ? locationError.message : 'Please enable location access and try again.'}` 
         }
+      }
+    }
+    
+    if (!location || !location.lat || !location.lng) {
+      return {
+        success: false,
+        error: 'Valid location coordinates are required for maps search'
       }
     }
     
@@ -1130,21 +1179,65 @@ ipcMain.handle('maps-search', async (event, query: string, options?: any) => {
   }
 })
 
-// Get current location handler
+// Also add a dedicated location handler for better debugging:
 ipcMain.handle('maps-get-location', async (event) => {
   try {
     console.log('📍 Getting location from renderer process...')
     
     const location = await event.sender.executeJavaScript(`
       new Promise((resolve, reject) => {
+        console.log('🌍 Checking geolocation in renderer process...');
+        
         if (!navigator.geolocation) {
+          console.error('❌ Geolocation not supported in this context');
           reject(new Error('Geolocation not supported'));
           return;
         }
+        
+        console.log('✅ Requesting geolocation...');
+        
+        // First try to get cached position quickly
         navigator.geolocation.getCurrentPosition(
-          (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
-          (error) => reject(error),
-          { enableHighAccuracy: true, timeout: 10000 }
+          (position) => {
+            console.log('✅ Got location successfully:', {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy
+            });
+            resolve({ 
+              lat: position.coords.latitude, 
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy
+            });
+          },
+          (error) => {
+            console.error('❌ Geolocation failed in renderer:', {
+              code: error.code,
+              message: error.message
+            });
+            
+            let errorMessage = 'Location access failed: ';
+            switch(error.code) {
+              case 1:
+                errorMessage += 'Permission denied. Please allow location access and try again.';
+                break;
+              case 2:
+                errorMessage += 'Position unavailable. Check GPS/internet connection.';
+                break;
+              case 3:
+                errorMessage += 'Request timed out. Please try again.';
+                break;
+              default:
+                errorMessage += error.message || 'Unknown error';
+            }
+            
+            reject(new Error(errorMessage));
+          },
+          { 
+            enableHighAccuracy: false, // Try with lower accuracy first for speed
+            timeout: 10000,
+            maximumAge: 600000 // Allow cached location up to 10 minutes old
+          }
         );
       });
     `)

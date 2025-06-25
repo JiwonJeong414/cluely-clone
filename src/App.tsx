@@ -323,7 +323,7 @@ function App() {
         }
       }
       
-      // Search maps if location query
+      // Search maps if location query - and RETURN EARLY if it's ONLY a location query
       if (isLocation && window.electronAPI?.maps) {
         try {
           setIsSearchingMaps(true)
@@ -332,6 +332,24 @@ function App() {
             locationResults = mapsResult.places
             setPlaces(locationResults)
             console.log(`🗺️ Found ${locationResults.length} places`)
+            
+            // If this is PURELY a location query (no calendar context), don't search Drive
+            if (!isCalendar) {
+              // Build location-only context message
+              let contextualMessage = query
+              
+              if (locationResults && locationResults.length > 0) {
+                const locationContext = locationResults
+                  .map(place => `${place.name} - ${place.address} (${place.distance}, ${place.duration}) Rating: ${place.rating}/5`)
+                  .join('\n')
+                
+                contextualMessage += `\n\nNearby places:\n${locationContext}`
+              }
+              
+              // Send to AI with location context only
+              await sendMessage(contextualMessage, undefined, undefined, '')
+              return // EARLY RETURN - don't search Drive for pure location queries
+            }
           }
         } catch (error) {
           console.error('Maps search failed:', error)
@@ -340,19 +358,21 @@ function App() {
         }
       }
       
-      // Search Drive for context
-      try {
-        const driveResult = await window.electronAPI.drive.search(query, 5)
-        if (driveResult.success && driveResult.results) {
-          driveResults = driveResult.results
-          setSearchResults(driveResults)
+      // Only search Drive if it's NOT a pure location query OR if we also need calendar context
+      if (!isLocation || isCalendar) {
+        try {
+          const driveResult = await window.electronAPI.drive.search(query, 5)
+          if (driveResult.success && driveResult.results) {
+            driveResults = driveResult.results
+            setSearchResults(driveResults)
+          }
+        } catch (error) {
+          console.error('Drive search failed:', error)
+          setSearchResults([])
         }
-      } catch (error) {
-        console.error('Drive search failed:', error)
-        setSearchResults([])
       }
       
-      // Build comprehensive context message
+      // Build comprehensive context message for calendar + drive queries
       let contextualMessage = query
       
       if (calendarCtx) {
@@ -453,14 +473,21 @@ function App() {
 
   const isLocationQuery = (query: string): boolean => {
     const locationKeywords = [
-      'near me', 'nearby', 'closest', 'nearest', 'around here',
-      'restaurant', 'coffee', 'gas station', 'hospital', 'pharmacy',
-      'store', 'shop', 'bank', 'atm', 'hotel', 'parking',
-      'directions to', 'how to get to', 'drive to', 'walk to'
+      'near me', 'nearby', 'closest', 'nearest', 'around here', 'close to me',
+      'restaurant', 'coffee', 'cafe', 'gas station', 'hospital', 'pharmacy',
+      'store', 'shop', 'bank', 'atm', 'hotel', 'parking', 'grocery',
+      'directions to', 'how to get to', 'drive to', 'walk to', 'navigate to',
+      'find a', 'where is the', 'location of', 'address of'
     ]
     
     const lowerQuery = query.toLowerCase()
-    return locationKeywords.some(keyword => lowerQuery.includes(keyword))
+    
+    // Must contain a location keyword AND not be asking about documents/calendar
+    const hasLocationKeyword = locationKeywords.some(keyword => lowerQuery.includes(keyword))
+    const isNotDocumentQuery = !lowerQuery.includes('document') && !lowerQuery.includes('file') && !lowerQuery.includes('drive')
+    const isNotCalendarQuery = !lowerQuery.includes('meeting') && !lowerQuery.includes('schedule') && !lowerQuery.includes('calendar')
+    
+    return hasLocationKeyword && isNotDocumentQuery && isNotCalendarQuery
   }
 
   const getCalendarContextForAI = async (query: string): Promise<string> => {
@@ -496,6 +523,87 @@ function App() {
     }
     
     return `${formatTime(start)} - ${formatTime(end)}`
+  }
+
+  // Location permission helper
+  const requestLocationPermission = async (): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      console.log('🌍 Requesting location permission...')
+      
+      // First check if geolocation is supported
+      if (!navigator.geolocation) {
+        console.error('❌ Geolocation not supported')
+        alert('Geolocation is not supported by this browser')
+        return null
+      }
+      
+      // Check current permission state if available
+      if ('permissions' in navigator) {
+        try {
+          const permission = await navigator.permissions.query({ name: 'geolocation' })
+          console.log('📍 Current location permission state:', permission.state)
+          
+          if (permission.state === 'denied') {
+            alert('Location access is blocked. Please enable it in your browser settings and refresh the page.')
+            return null
+          }
+        } catch (permError) {
+          console.warn('Could not check permission state:', permError)
+        }
+      }
+      
+      // Request location
+      return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Location request timed out'))
+        }, 15000)
+        
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            clearTimeout(timeoutId)
+            console.log('✅ Location obtained:', {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy
+            })
+            resolve({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            })
+          },
+          (error) => {
+            clearTimeout(timeoutId)
+            console.error('❌ Location error:', error)
+            
+            let message = 'Failed to get your location: '
+            switch (error.code) {
+              case error.PERMISSION_DENIED:
+                message += 'Permission denied. Please allow location access and try again.'
+                break
+              case error.POSITION_UNAVAILABLE:
+                message += 'Location unavailable. Please check your GPS or internet connection.'
+                break
+              case error.TIMEOUT:
+                message += 'Request timed out. Please try again.'
+                break
+              default:
+                message += error.message || 'Unknown error occurred'
+            }
+            
+            alert(message)
+            reject(new Error(message))
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 300000 // 5 minutes
+          }
+        )
+      })
+    } catch (error) {
+      console.error('❌ Location permission error:', error)
+      return null
+    }
   }
 
   // Add smart suggestions based on calendar context
@@ -1284,6 +1392,25 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   className="w-full px-4 py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded-lg text-white text-sm transition-colors font-medium"
                 >
                   Sign Out
+                </button>
+              </div>
+
+              {/* Location Test */}
+              <div className="pt-3 border-t border-green-500/10">
+                <button
+                  onClick={async () => {
+                    const location = await requestLocationPermission()
+                    if (location) {
+                      console.log('✅ Location test successful:', location)
+                      alert(`Location: ${location.lat}, ${location.lng}`)
+                    } else {
+                      console.log('❌ Location test failed')
+                      alert('Location test failed')
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded-lg text-white text-sm transition-colors font-medium"
+                >
+                  🌍 Test Location
                 </button>
               </div>
             </div>
