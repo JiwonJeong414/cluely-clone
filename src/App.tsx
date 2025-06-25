@@ -80,7 +80,6 @@ function App() {
   // Google Docs state
   const [isCreatingNote, setIsCreatingNote] = useState(false)
   const [docsNotification, setDocsNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-  const [recentDocs, setRecentDocs] = useState<any[]>([])
   
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -132,7 +131,6 @@ function App() {
   useEffect(() => {
     if (user && googleConnection.isConnected) {
       refreshSyncStats()
-      loadRecentDocs() // Load recent Google Docs
     }
   }, [user, googleConnection.isConnected])
 
@@ -1811,25 +1809,6 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     setTimeout(() => setDocsNotification(null), 5000)
   }
 
-  const loadRecentDocs = async () => {
-    if (!window.electronAPI?.docs || !googleConnection.isConnected) return
-    
-    try {
-      const result = await window.electronAPI.docs.listRecent(5)
-      if (result.success) {
-        setRecentDocs(result.documents || [])
-      }
-    } catch (error) {
-      console.error('Failed to load recent docs:', error)
-    }
-  }
-
-  const openGoogleDoc = (doc: any) => {
-    if (doc.webViewLink) {
-      window.open(doc.webViewLink, '_blank')
-    }
-  }
-
   return (
     <div 
       ref={contentRef}
@@ -1924,15 +1903,6 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                 >
                   👤
                 </button>
-                {googleConnection.isConnected && (
-                  <button
-                    onClick={loadRecentDocs}
-                    className="p-2 border rounded-lg text-sm transition-colors bg-yellow-500/10 border-yellow-400/20 hover:bg-yellow-500/20"
-                    title="View recent Google Docs"
-                  >
-                    📝
-                  </button>
-                )}
               </>
             )}
           </div>
@@ -1954,35 +1924,6 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
           <div className="absolute top-16 right-4 z-50 px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/20 border border-blue-400/30 text-blue-300 flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
             Creating Google Doc...
-          </div>
-        )}
-
-        {/* Recent Google Docs Popup */}
-        {recentDocs.length > 0 && (
-          <div className="absolute top-16 right-4 z-50 bg-black/95 border border-gray-600 rounded-lg p-3 min-w-64 max-w-80">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-white text-sm font-medium">Recent Google Docs</h3>
-              <button
-                onClick={() => setRecentDocs([])}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {recentDocs.map((doc) => (
-                <button
-                  key={doc.id}
-                  onClick={() => openGoogleDoc(doc)}
-                  className="w-full text-left p-2 rounded bg-gray-800/50 hover:bg-gray-700/50 transition-colors"
-                >
-                  <div className="text-white text-sm truncate">{doc.name}</div>
-                  <div className="text-gray-400 text-xs">
-                    {new Date(doc.modifiedTime).toLocaleDateString()}
-                  </div>
-                </button>
-              ))}
-            </div>
           </div>
         )}
 
