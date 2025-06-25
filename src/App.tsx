@@ -55,8 +55,27 @@ function App() {
   const [selectedCalendarRange, setSelectedCalendarRange] = useState<CalendarRange>('today')
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(false)
   
+  // Add state for sync stats
+  const [syncStats, setSyncStats] = useState<any>(null)
+  
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Set up sync progress listener ONCE on mount
+  useEffect(() => {
+    if (window.electronAPI?.onDriveSyncProgress) {
+      console.log('Setting up drive sync progress listener')
+      window.electronAPI.onDriveSyncProgress((progress: SyncProgress) => {
+        console.log('📊 Sync progress update:', progress)
+        setSyncProgress(progress)
+        
+        // Clear progress when sync is complete
+        if (progress.isComplete) {
+          setTimeout(() => setSyncProgress(null), 3000)
+        }
+      })
+    }
+  }, [])
 
   // Load user data on startup
   useEffect(() => {
@@ -67,11 +86,12 @@ function App() {
           if (userData) {
             setUser(userData)
             
+            // Use the consistent API name
             const connection = await window.electronAPI.auth.getGoogleConnection()
             setGoogleConnection(connection)
             
-            // Load today's calendar events automatically
-            if (connection.isConnected) {
+            // Load today's calendar events automatically ONLY if not already loading
+            if (connection.isConnected && !isLoadingCalendar) {
               loadCalendarEvents('today')
             }
           }
@@ -82,11 +102,20 @@ function App() {
     }
 
     loadUserData()
-  }, [])
+  }, []) // Remove isLoadingCalendar dependency to avoid loops
+
+  // Load sync stats when user connects
+  useEffect(() => {
+    if (user && googleConnection.isConnected) {
+      refreshSyncStats()
+    }
+  }, [user, googleConnection.isConnected])
 
   // Load calendar events function
   const loadCalendarEvents = async (range: CalendarRange) => {
-    if (!window.electronAPI?.calendar || !user || !googleConnection.isConnected) return
+    if (!window.electronAPI?.calendar || !user || !googleConnection.isConnected || isLoadingCalendar) {
+      return
+    }
 
     setIsLoadingCalendar(true)
     try {
@@ -165,13 +194,13 @@ function App() {
       if (result.success && result.user) {
         setUser(result.user)
         
-        // Refresh Google connection
+        // Use consistent API
         const connection = await window.electronAPI.auth.getGoogleConnection()
         setGoogleConnection(connection)
         
         // Load calendar events after sign in
         if (connection.isConnected) {
-          loadCalendarEvents('today')
+          setTimeout(() => loadCalendarEvents('today'), 1000) // Slight delay to avoid conflicts
         }
       } else {
         console.error('Sign in failed:', result.error)
@@ -191,45 +220,89 @@ function App() {
       setUser(null)
       setGoogleConnection({ isConnected: false })
       setCalendarEvents([])
+      setSyncProgress(null) // Clear any ongoing sync progress
+      setSearchResults([]) // Clear drive search results
       setCurrentMode('chat')
     } catch (error) {
       console.error('Error signing out:', error)
     }
   }
 
-  // Drive sync function
-  const handleSync = async () => {
-    if (!window.electronAPI?.drive || !user) return
+  // Enhanced sync function with options
+  const handleSync = async (options: { 
+    limit?: number
+    force?: boolean
+    strategy?: 'new_files_only' | 'force_reindex'
+  } = {}) => {
+    if (!window.electronAPI?.drive || !user || !googleConnection.isConnected) {
+      console.error('Cannot sync: missing requirements', { 
+        hasAPI: !!window.electronAPI?.drive, 
+        hasUser: !!user, 
+        isConnected: googleConnection.isConnected 
+      })
+      return
+    }
     
+    const { limit = 10, force = false, strategy = 'new_files_only' } = options
+    
+    console.log(`🚀 Starting ${strategy} sync with limit ${limit}...`)
     setIsSyncing(true)
     setSyncProgress(null)
     
     try {
-      const result = await window.electronAPI.drive.sync({ limit: 10 })
+      const result = await window.electronAPI.drive.sync({ limit, force, strategy })
       if (result.success) {
-        console.log('Sync completed:', result.result)
+        console.log('✅ Sync completed:', result.result)
         
-        // Refresh indexed files
-        const filesResult = await window.electronAPI.db.getIndexedFiles()
-        if (filesResult.success) {
-          // Convert to DriveFile format if needed
+        // Refresh sync stats
+        await refreshSyncStats()
+        
+        // Show success message
+        if (result.result?.message) {
+          console.log('📊 Sync message:', result.result.message)
         }
       } else {
-        console.error('Sync failed:', result.error)
+        console.error('❌ Sync failed:', result.error)
+        alert(`Drive sync failed: ${result.error}`)
       }
     } catch (error) {
-      console.error('Error syncing:', error)
+      console.error('💥 Error syncing:', error)
+      alert(`Drive sync error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSyncing(false)
-      setSyncProgress(null)
     }
   }
 
-  // Search Drive documents
-  const handleDriveSearch = async (query: string) => {
+  // Quick sync methods
+  const handleQuickSync = () => handleSync({ limit: 5, force: false })
+  const handleDeepSync = () => handleSync({ limit: 20, force: false })
+  const handleForceSync = () => handleSync({ limit: 10, force: true })
+
+  // Load sync stats
+  const refreshSyncStats = async () => {
     if (!window.electronAPI?.drive || !user) return
+    
+    try {
+      const result = await window.electronAPI.drive.getSyncStats()
+      if (result.success) {
+        setSyncStats(result.stats)
+      }
+    } catch (error) {
+      console.error('Error loading sync stats:', error)
+    }
+  }
+
+  // Search Drive documents - FIXED
+  const handleDriveSearch = async (query: string) => {
+    if (!window.electronAPI?.drive || !user || !googleConnection.isConnected) {
+      console.warn('Drive search skipped: not connected')
+      await sendMessage(query) // Fallback to regular chat
+      return
+    }
 
     try {
+      console.log('🔍 Starting integrated search for:', query)
+      
       // Check if it's a calendar-related query
       const isCalendar = isCalendarQuery(query)
       
@@ -237,16 +310,29 @@ function App() {
       let driveResults = null
       
       // Get calendar context if it's a calendar query
-      if (isCalendar) {
-        calendarCtx = await getCalendarContextForAI(query)
-        setCalendarContext(calendarCtx)
+      if (isCalendar && window.electronAPI?.calendar) {
+        try {
+          calendarCtx = await getCalendarContextForAI(query)
+          setCalendarContext(calendarCtx)
+        } catch (error) {
+          console.warn('Calendar context failed:', error)
+        }
       }
       
-      // Always search Drive for context
-      const driveResult = await window.electronAPI.drive.search(query, 5)
-      if (driveResult.success) {
-        driveResults = driveResult.results
-        setSearchResults(driveResults || [])
+      // Search Drive for context
+      try {
+        const driveResult = await window.electronAPI.drive.search(query, 5)
+        if (driveResult.success && driveResult.results) {
+          driveResults = driveResult.results
+          setSearchResults(driveResults)
+          console.log(`📄 Found ${driveResults.length} relevant documents`)
+        } else {
+          console.warn('Drive search returned no results:', driveResult.error)
+          setSearchResults([])
+        }
+      } catch (error) {
+        console.error('Drive search failed:', error)
+        setSearchResults([])
       }
       
       // Build comprehensive context message
@@ -380,20 +466,6 @@ function App() {
     return `${formatTime(start)} - ${formatTime(end)}`
   }
 
-  // Example queries that will trigger calendar integration
-  const calendarExampleQueries = [
-    "What's on my schedule today?",
-    "Do I have any meetings tomorrow?",
-    "When am I free this week?",
-    "What's coming up next week?",
-    "Am I busy on Friday afternoon?",
-    "When's my next meeting?",
-    "Help me prepare for tomorrow's meetings",
-    "What should I focus on today based on my calendar?",
-    "Do I have time for a 1-hour task this afternoon?",
-    "What's my busiest day this week?"
-  ]
-
   // Add smart suggestions based on calendar context
   const getSmartSuggestions = (): string[] => {
     const currentHour = new Date().getHours()
@@ -413,7 +485,7 @@ function App() {
     return suggestions
   }
 
-  // Send message with Drive context
+  // Send message with Drive context - FIXED
   const sendMessage = async (
     userMessage: string, 
     screenshotDataUrl?: string, 
@@ -536,7 +608,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     const query = inputValue.trim()
     if (!query || isLoading || isStreaming) return
 
-    // If we have Drive connection, search Drive first
+    // If we have Google connection, search Drive first
     if (googleConnection.isConnected && currentMode === 'chat') {
       await handleDriveSearch(query)
     } else {
@@ -634,7 +706,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     console.log('🔄 Mode changed to:', currentMode)
     
     // Load calendar events when switching to calendar mode
-    if (currentMode === 'calendar' && user && googleConnection.isConnected && calendarEvents.length === 0) {
+    if (currentMode === 'calendar' && user && googleConnection.isConnected && calendarEvents.length === 0 && !isLoadingCalendar) {
       loadCalendarEvents(selectedCalendarRange)
     }
   }, [currentMode, user, googleConnection.isConnected])
@@ -664,17 +736,67 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
               <div className="flex items-center justify-between">
                 <h3 className="text-white font-medium">Drive Management</h3>
                 <div className="flex gap-2">
-                  {user && googleConnection.isConnected && (
-                    <button
-                      onClick={handleSync}
-                      disabled={isSyncing}
-                      className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs rounded transition-colors disabled:opacity-50"
-                    >
-                      {isSyncing ? 'Syncing...' : 'Sync Drive'}
-                    </button>
-                  )}
+                  <button
+                    onClick={handleQuickSync}
+                    disabled={isSyncing || !googleConnection.isConnected}
+                    className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs rounded transition-colors disabled:opacity-50"
+                    title="Sync 5 new files"
+                  >
+                    {isSyncing ? 'Syncing...' : 'Quick'}
+                  </button>
+                  <button
+                    onClick={handleDeepSync}
+                    disabled={isSyncing || !googleConnection.isConnected}
+                    className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs rounded transition-colors disabled:opacity-50"
+                    title="Sync 20 new files"
+                  >
+                    Deep
+                  </button>
+                  <button
+                    onClick={handleForceSync}
+                    disabled={isSyncing || !googleConnection.isConnected}
+                    className="px-3 py-1 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 text-xs rounded transition-colors disabled:opacity-50"
+                    title="Force reindex 10 files"
+                  >
+                    Force
+                  </button>
                 </div>
               </div>
+
+              {/* Connection Status */}
+              <div className={`text-xs px-3 py-2 rounded-lg border ${
+                googleConnection.isConnected 
+                  ? 'bg-green-500/10 border-green-400/20 text-green-300'
+                  : 'bg-red-500/10 border-red-400/20 text-red-300'
+              }`}>
+                {googleConnection.isConnected ? '✅ Drive Connected' : '❌ Drive Disconnected'}
+              </div>
+
+              {/* Sync Stats */}
+              {syncStats && (
+                <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
+                  <div className="text-white/80 text-sm mb-2">📊 Sync Statistics</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="text-white/60">
+                      📄 Documents: <span className="text-white">{syncStats.totalDocuments}</span>
+                    </div>
+                    <div className="text-white/60">
+                      🧠 Indexed: <span className="text-white">{syncStats.indexedFiles}</span>
+                    </div>
+                    <div className="text-white/60">
+                      🔗 Embeddings: <span className="text-white">{syncStats.totalEmbeddings}</span>
+                    </div>
+                    <div className="text-white/60">
+                      📈 Avg/File: <span className="text-white">{syncStats.averageEmbeddingsPerFile?.toFixed(1) || '0'}</span>
+                    </div>
+                  </div>
+                  {syncStats.lastSyncTime && (
+                    <div className="text-white/60 text-xs mt-2">
+                      🕒 Last sync: {new Date(syncStats.lastSyncTime).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              )}
               
               {syncProgress && (
                 <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
@@ -688,8 +810,13 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                     />
                   </div>
                   <div className="text-white/60 text-xs mt-1">
-                    {syncProgress.processedFiles}/{syncProgress.totalFiles} files • {syncProgress.embeddingsCreated} indexed
+                    {syncProgress.processedFiles}/{syncProgress.totalFiles} files • {syncProgress.embeddingsCreated} indexed • {syncProgress.skipped} skipped
                   </div>
+                  {syncProgress.errors > 0 && (
+                    <div className="text-red-300 text-xs mt-1">
+                      ⚠️ {syncProgress.errors} errors
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -707,6 +834,13 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                   📁 Organize
                 </button>
               </div>
+
+              {/* Sync Strategy Explanation */}
+              <div className="text-xs text-white/40 space-y-1">
+                <div>💡 <strong>Quick:</strong> 5 newest unprocessed files</div>
+                <div>🔍 <strong>Deep:</strong> 20 newest unprocessed files</div>
+                <div>🔄 <strong>Force:</strong> Reprocess 10 recent files</div>
+              </div>
             </div>
           </div>
         )
@@ -719,7 +853,8 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                 <h3 className="text-white font-medium">Drive Cleanup</h3>
                 <button
                   onClick={loadCleanupCandidates}
-                  className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded text-sm text-white transition-colors"
+                  disabled={!googleConnection.isConnected}
+                  className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded text-sm text-white transition-colors disabled:opacity-50"
                 >
                   Scan
                 </button>
@@ -787,8 +922,8 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                 <h3 className="text-white font-medium">File Organization</h3>
                 <button
                   onClick={analyzeForOrganization}
-                  disabled={isAnalyzing}
-                  className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded text-sm text-white transition-colors"
+                  disabled={isAnalyzing || !googleConnection.isConnected}
+                  className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded text-sm text-white transition-colors disabled:opacity-50"
                 >
                   {isAnalyzing ? 'Analyzing...' : 'Analyze'}
                 </button>
@@ -878,7 +1013,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                     <button
                       key={range}
                       onClick={() => handleCalendarRangeChange(range)}
-                      disabled={isLoadingCalendar}
+                      disabled={isLoadingCalendar || !googleConnection.isConnected}
                       className={`px-2 py-1 text-xs rounded transition-colors disabled:opacity-50 ${
                         selectedCalendarRange === range
                           ? 'bg-purple-500/30 border border-purple-400/50 text-white'

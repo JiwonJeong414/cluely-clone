@@ -508,8 +508,16 @@ ipcMain.handle('drive-sync', async (event, options = {}) => {
       return { success: false, error: 'User not authenticated' }
     }
     
-    console.log('🚀 Starting Drive sync...')
+    console.log('🚀 Starting enhanced Drive sync...')
     
+    // Extract options with defaults
+    const { 
+      limit = 10, 
+      force = false,
+      strategy = 'new_files_only'
+    } = options
+
+    // Enhanced sync with web app logic
     const result = await driveService.syncFiles(
       (progress) => {
         // Send progress updates to renderer
@@ -517,16 +525,106 @@ ipcMain.handle('drive-sync', async (event, options = {}) => {
           mainWindow.webContents.send('drive-sync-progress', progress)
         }
       },
-      options.limit || 10
+      { limit, force, strategy }
     )
     
-    console.log('✅ Drive sync completed:', result)
+    console.log('✅ Enhanced Drive sync completed:', result)
     return { success: true, result }
   } catch (error) {
-    console.error('❌ Drive sync error:', error)
+    console.error('❌ Enhanced Drive sync error:', error)
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Sync failed' 
+    }
+  }
+})
+
+// Add new handlers for different sync strategies
+ipcMain.handle('drive-sync-force', async (event, options = {}) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('🔄 Starting force sync...')
+    
+    const result = await driveService.forceSyncFiles(
+      (progress) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('drive-sync-progress', progress)
+        }
+      },
+      options.limit || 10
+    )
+    
+    console.log('✅ Force sync completed:', result)
+    return { success: true, result }
+  } catch (error) {
+    console.error('❌ Force sync error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Force sync failed' 
+    }
+  }
+})
+
+ipcMain.handle('drive-sync-new', async (event, options = {}) => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    console.log('🆕 Starting new files sync...')
+    
+    const result = await driveService.syncNewFiles(
+      (progress) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('drive-sync-progress', progress)
+        }
+      },
+      options.limit || 10
+    )
+    
+    console.log('✅ New files sync completed:', result)
+    return { success: true, result }
+  } catch (error) {
+    console.error('❌ New files sync error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'New files sync failed' 
+    }
+  }
+})
+
+// Add sync stats handler
+ipcMain.handle('drive-get-sync-stats', async () => {
+  try {
+    if (!driveService) {
+      return { success: false, error: 'Drive service not available' }
+    }
+    
+    const user = authService.getCurrentUser()
+    if (!user) {
+      return { success: false, error: 'User not authenticated' }
+    }
+    
+    const stats = await driveService.getSyncStats(user.id)
+    return { success: true, stats }
+  } catch (error) {
+    console.error('❌ Get sync stats error:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Get stats failed' 
     }
   }
 })

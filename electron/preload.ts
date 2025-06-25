@@ -32,19 +32,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('drive-sync-progress', (_event, progress) => callback(progress))
   },
 
-  // ========== NEW DRIVE APIS ==========
+  // ========== UPDATED AUTHENTICATION APIS ==========
   
-  // Authentication
+  // Authentication - FIXED: Use consistent naming
   auth: {
     getUser: () => ipcRenderer.invoke('auth-get-user'),
     signIn: () => ipcRenderer.invoke('auth-sign-in'),
     signOut: () => ipcRenderer.invoke('auth-sign-out'),
     getGoogleConnection: () => ipcRenderer.invoke('auth-get-google-connection'),
+    // Deprecated but kept for backward compatibility
+    getDriveConnection: () => ipcRenderer.invoke('auth-get-google-connection'),
   },
 
   // Drive operations
   drive: {
-    sync: (options?: { limit?: number }) => ipcRenderer.invoke('drive-sync', options),
+    sync: (options?: { limit?: number; force?: boolean; strategy?: string }) => ipcRenderer.invoke('drive-sync', options),
+    syncForce: (options?: { limit?: number }) => ipcRenderer.invoke('drive-sync-force', options),
+    syncNew: (options?: { limit?: number }) => ipcRenderer.invoke('drive-sync-new', options),
+    getSyncStats: () => ipcRenderer.invoke('drive-get-sync-stats'),
     search: (query: string, limit?: number) => ipcRenderer.invoke('drive-search', query, limit),
     listFiles: (options?: any) => ipcRenderer.invoke('drive-list-files', options),
     deleteFile: (fileId: string) => ipcRenderer.invoke('drive-delete-file', fileId),
@@ -82,13 +87,18 @@ export interface User {
   photoURL?: string
 }
 
+// FIXED: Use consistent naming - GoogleConnection instead of DriveConnection
 export interface GoogleConnection {
   isConnected: boolean
   accessToken?: string
   refreshToken?: string
   connectedAt?: Date
-  lastSyncAt?: Date
+  lastDriveSyncAt?: Date
+  lastCalendarSyncAt?: Date
 }
+
+// Keep DriveConnection as alias for backward compatibility
+export interface DriveConnection extends GoogleConnection {}
 
 export interface DriveFile {
   id: string
@@ -206,7 +216,6 @@ export interface ElectronAPI {
   showWindow: () => Promise<void>
   updateContentDimensions: (dimensions: { width: number; height: number }) => Promise<void>
   dragWindow: (deltaX: number, deltaY: number) => Promise<void>
-  centerWindow: () => Promise<void>
   captureScreen: () => Promise<string>
   getAvailableScreens: () => Promise<ScreenSource[]>
   captureScreenById: (sourceId: string) => Promise<string>
@@ -215,17 +224,22 @@ export interface ElectronAPI {
   onToggleDriveMode: (callback: () => void) => void
   onDriveSyncProgress: (callback: (progress: SyncProgress) => void) => void
 
-  // Authentication
+  // Authentication - FIXED: Consistent naming
   auth: {
     getUser: () => Promise<User | null>
     signIn: () => Promise<{ success: boolean; user?: User; error?: string }>
     signOut: () => Promise<{ success: boolean; error?: string }>
     getGoogleConnection: () => Promise<GoogleConnection>
+    // Backward compatibility
+    getDriveConnection: () => Promise<GoogleConnection>
   }
 
   // Drive
   drive: {
-    sync: (options?: { limit?: number }) => Promise<{ success: boolean; result?: any; error?: string }>
+    sync: (options?: { limit?: number; force?: boolean; strategy?: string }) => Promise<{ success: boolean; result?: any; error?: string }>
+    syncForce: (options?: { limit?: number }) => Promise<{ success: boolean; result?: any; error?: string }>
+    syncNew: (options?: { limit?: number }) => Promise<{ success: boolean; result?: any; error?: string }>
+    getSyncStats: () => Promise<{ success: boolean; stats?: any; error?: string }>
     search: (query: string, limit?: number) => Promise<{ success: boolean; results?: any[]; error?: string }>
     listFiles: (options?: any) => Promise<{ success: boolean; files?: DriveFile[]; error?: string }>
     deleteFile: (fileId: string) => Promise<{ success: boolean; error?: string }>
