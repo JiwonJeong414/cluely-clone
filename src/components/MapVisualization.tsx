@@ -7,13 +7,15 @@ interface MapVisualizationProps {
   isSearching: boolean
   userLocation?: { lat: number; lng: number }
   className?: string
+  style?: React.CSSProperties
 }
 
 export const MapVisualization: React.FC<MapVisualizationProps> = ({
   places,
   isSearching,
   userLocation,
-  className = ''
+  className = '',
+  style
 }) => {
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null)
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(() => {
@@ -110,7 +112,7 @@ export const MapVisualization: React.FC<MapVisualizationProps> = ({
   }
 
   return (
-    <div className={`bg-black/40 backdrop-blur-sm border border-green-400/20 rounded-lg overflow-hidden ${className}`}>
+    <div className={`bg-black/40 backdrop-blur-sm border border-green-400/20 rounded-lg overflow-hidden ${className}`} style={style}>
       {/* Map Header */}
       <div className="px-3 py-2 bg-green-500/10 border-b border-green-400/20">
         <div className="flex items-center justify-between">
