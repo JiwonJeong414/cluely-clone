@@ -22,13 +22,8 @@ export const MapVisualization: React.FC<MapVisualizationProps> = ({
   const [mapZoom, setMapZoom] = useState<number>(13)
   const [mapError, setMapError] = useState<string | null>(null)
 
-  // Debug: Try multiple sources for the API key
+  // Get API key
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-
-  console.log('🗺️ Maps component debug:')
-  console.log('import.meta.env.VITE_GOOGLE_MAPS_API_KEY:', import.meta.env.VITE_GOOGLE_MAPS_API_KEY)
-  console.log('Final apiKey being used:', apiKey)
-  console.log('API key length:', apiKey?.length)
 
   // Error handling for missing API key
   if (!apiKey) {
@@ -43,11 +38,6 @@ export const MapVisualization: React.FC<MapVisualizationProps> = ({
         <div className="text-red-200 text-xs mt-1">
           Debug: {JSON.stringify(import.meta.env, null, 2)}
         </div>
-        {places.length > 0 && (
-          <div className="mt-3 pt-2 border-t border-red-400/20">
-            <div className="text-red-200 text-xs">Found {places.length} places (map disabled)</div>
-          </div>
-        )}
       </div>
     )
   }

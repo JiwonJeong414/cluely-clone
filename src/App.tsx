@@ -5,23 +5,6 @@ import { AuthButton } from './components/AuthButton'
 import { MapVisualization } from './components/MapVisualization'
 import { PlacesList } from './components/PlacesList'
 
-// Debug component for API key troubleshooting
-const DebugAPIKey = () => {
-  const frontendKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-  
-  return (
-    <div className="fixed top-0 right-0 bg-black/90 text-white p-3 text-xs z-50 max-w-xs">
-      <div className="font-bold mb-2">🔍 API Key Debug</div>
-      <div>Frontend Key: {frontendKey ? '✅ Found' : '❌ Missing'}</div>
-      {frontendKey && (
-        <div>Preview: {frontendKey.substring(0, 12)}...</div>
-      )}
-      <div>Env Mode: {import.meta.env.MODE}</div>
-      <div>Base URL: {import.meta.env.BASE_URL}</div>
-    </div>
-  )
-}
-
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
   interface CSSProperties {
@@ -371,18 +354,18 @@ function App() {
             // Do NOT switch to maps mode; just show map inline in chat
             // If this is PURELY a location query (no calendar context), don't search Drive
             if (!isCalendar) {
-              // Build location-only context message
-              let contextualMessage = query
-              
+              // Build a short location-only context message
+              let contextualMessage = "Nearby places:\n"
               if (locationResults && locationResults.length > 0) {
                 const locationContext = locationResults
-                  .map(place => `${place.name} - ${place.address} (${place.distance}, ${place.duration}) Rating: ${place.rating}/5`)
+                  .slice(0, 3)
+                  .map(place => `${place.name} - ${place.address}`)
                   .join('\n')
-                
-                contextualMessage += `\n\nNearby places:\n${locationContext}`
+                contextualMessage += locationContext
+              } else {
+                contextualMessage += "No results found."
               }
-              
-              // Send to AI with location context only
+              contextualMessage += "\n\nPlease answer in 3-4 short sentences."
               await sendMessage(contextualMessage, undefined, undefined, '')
               return // EARLY RETURN - don't search Drive for pure location queries
             }
@@ -1637,9 +1620,6 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         transformOrigin: 'center center'
       }}
     >
-      {/* Debug API Key Component */}
-      <DebugAPIKey />
-
       {/* Header */}
       <div 
         className={`px-4 py-3 bg-black/95 backdrop-blur-lg cursor-grab ${isDragging ? 'cursor-grabbing' : ''}`}
