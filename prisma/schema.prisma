@@ -1,0 +1,128 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String                 @id @default(cuid())
+  uid                  String                 @unique
+  email                String                 @unique
+  displayName          String
+  photoURL             String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  googleConnection     GoogleConnection?
+  documents            Document[]
+  documentEmbeddings   DocumentEmbedding[]
+  chats                Chat[]
+  cleanupActivities    CleanupActivity[]
+  organizationActivities OrganizationActivity[]
+
+  @@map("users")
+}
+
+model GoogleConnection {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken  String
+  refreshToken String?
+  isConnected  Boolean   @default(true)
+  connectedAt  DateTime  @default(now())
+  lastDriveSyncAt DateTime?
+  lastCalendarSyncAt DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@map("google_connections")
+}
+
+model Document {
+  id           String    @id @default(cuid())
+  driveId      String    @unique
+  name         String
+  mimeType     String
+  modifiedTime DateTime
+  size         Int?
+  webViewLink  String?
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("documents")
+}
+
+model DocumentEmbedding {
+  id         String   @id @default(cuid())
+  fileId     String
+  fileName   String
+  content    String
+  embedding  String   // JSON string of number array
+  metadata   String?  // JSON string
+  chunkIndex Int      @default(0)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@map("document_embeddings")
+}
+
+model Chat {
+  id        String    @id @default(cuid())
+  summary   String
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("chats")
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  content      String
+  sender       String   // 'user' or 'assistant'
+  images       String?  // JSON string array
+  driveContext String?  // JSON string
+  timestamp    DateTime @default(now())
+  chatId       String
+  chat         Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model CleanupActivity {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filesDeleted     Int
+  filesRequested   Int
+  errors           Int
+  deletedFileNames String   // JSON string array
+  timestamp        DateTime @default(now())
+
+  @@map("cleanup_activities")
+}
+
+model OrganizationActivity {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clusterName String
+  folderName  String
+  filesMoved  Int
+  method      String
+  confidence  Float
+  metadata    String?  // JSON string
+  timestamp   DateTime @default(now())
+
+  @@map("organization_activities")
+}

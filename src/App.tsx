@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { initializeOpenAI, getOpenAI, type ChatMessage } from './api/openai'
+import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, CalendarAnalysis, CalendarInsight } from '../electron/preload'
+import { AuthButton } from './components/AuthButton'
 
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
@@ -15,39 +17,157 @@ interface Message {
   timestamp: Date
   hasScreenshot?: boolean
   screenshotUrl?: string
+  driveContext?: any[]
+  calendarContext?: string
 }
 
-interface ScreenSource {
-  id: string
-  name: string
-  thumbnail: string
-  display_id: string
-}
+type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar' | 'profile'
+type CalendarRange = 'today' | 'week' | 'next-week'
 
 function App() {
+  // Existing state
   const [appVersion, setAppVersion] = useState<string>('')
-  const [shortcutTestSuccess, setShortcutTestSuccess] = useState<boolean>(false)
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [isChatMode, setIsChatMode] = useState(false)
   const [currentResponse, setCurrentResponse] = useState<Message | null>(null)
   const [streamingText, setStreamingText] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
-  const [availableScreens, setAvailableScreens] = useState<ScreenSource[]>([])
-  const [isCapturing, setIsCapturing] = useState(false)
-  const [showScreenOptions, setShowScreenOptions] = useState(false)
-  const [lastScreenshot, setLastScreenshot] = useState<string | null>(null)
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  
+  // New Drive state
+  const [currentMode, setCurrentMode] = useState<AppMode>('chat')
+  const [user, setUser] = useState<User | null>(null)
+  const [googleConnection, setGoogleConnection] = useState<GoogleConnection>({ isConnected: false })
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
+  const [cleanupCandidates, setCleanupCandidates] = useState<CleanupCandidate[]>([])
+  const [organizationClusters, setOrganizationClusters] = useState<OrganizationCluster[]>([])
+  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([])
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  
+  // Calendar state
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [calendarContext, setCalendarContext] = useState<string>('')
+  const [selectedCalendarRange, setSelectedCalendarRange] = useState<CalendarRange>('today')
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false)
+  
+  // Add state for sync stats
+  const [syncStats, setSyncStats] = useState<any>(null)
   
   const contentRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const headerRef = useRef<HTMLDivElement>(null)
 
+  // Set up sync progress listener ONCE on mount
+  useEffect(() => {
+    if (window.electronAPI?.onDriveSyncProgress) {
+      console.log('Setting up drive sync progress listener')
+      window.electronAPI.onDriveSyncProgress((progress: SyncProgress) => {
+        console.log('📊 Sync progress update:', progress)
+        setSyncProgress(progress)
+        
+        // Clear progress when sync is complete
+        if (progress.isComplete) {
+          setTimeout(() => setSyncProgress(null), 3000)
+        }
+      })
+    }
+  }, [])
+
+  // Load user data on startup
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (window.electronAPI?.auth) {
+        try {
+          const userData = await window.electronAPI.auth.getUser()
+          if (userData) {
+            setUser(userData)
+            
+            // Use the consistent API name
+            const connection = await window.electronAPI.auth.getGoogleConnection()
+            setGoogleConnection(connection)
+            
+            // Load today's calendar events automatically ONLY if not already loading
+            if (connection.isConnected && !isLoadingCalendar) {
+              loadCalendarEvents('today')
+            }
+          }
+        } catch (error) {
+          console.error('Error loading user data:', error)
+        }
+      }
+    }
+
+    loadUserData()
+  }, []) // Remove isLoadingCalendar dependency to avoid loops
+
+  // Load sync stats when user connects
+  useEffect(() => {
+    if (user && googleConnection.isConnected) {
+      refreshSyncStats()
+    }
+  }, [user, googleConnection.isConnected])
+
+  // Load calendar events function
+  const loadCalendarEvents = async (range: CalendarRange) => {
+    if (!window.electronAPI?.calendar || !user || !googleConnection.isConnected || isLoadingCalendar) {
+      return
+    }
+
+    setIsLoadingCalendar(true)
+    try {
+      let result
+      switch (range) {
+        case 'today':
+          result = await window.electronAPI.calendar.getToday()
+          break
+        case 'week':
+          result = await window.electronAPI.calendar.getWeek()
+          break
+        case 'next-week':
+          result = await window.electronAPI.calendar.getNextWeek()
+          break
+        default:
+          result = await window.electronAPI.calendar.getToday()
+      }
+
+      if (result.success) {
+        setCalendarEvents(result.events || [])
+        console.log(`📅 Loaded ${result.events?.length || 0} events for ${range}`)
+      } else {
+        console.error('Failed to load calendar events:', result.error)
+        setCalendarEvents([])
+      }
+    } catch (error) {
+      console.error('Error loading calendar events:', error)
+      setCalendarEvents([])
+    } finally {
+      setIsLoadingCalendar(false)
+    }
+  }
+
+  // Update calendar range and load events
+  const handleCalendarRangeChange = (range: CalendarRange) => {
+    setSelectedCalendarRange(range)
+    loadCalendarEvents(range)
+  }
+
+  // Listen for global screenshot capture
+  useEffect(() => {
+    if (window.electronAPI?.onScreenshotCaptured) {
+      console.log('Setting up screenshot listener')
+      window.electronAPI.onScreenshotCaptured((screenshot: string) => {
+        console.log('📸 Screenshot received in React!', screenshot.substring(0, 50) + '...')
+        sendMessage("What do you see on my screen?", screenshot)
+        if (currentMode !== 'chat') setCurrentMode('chat')
+      })
+    }
+  }, [currentMode])
+
+  // Update dimensions when content changes
   const updateDimensions = useCallback(() => {
     if (contentRef.current && window.electronAPI?.updateContentDimensions) {
       requestAnimationFrame(() => {
@@ -64,132 +184,322 @@ function App() {
     }
   }, [])
 
-  const scrollToBottom = useCallback(() => {
-    if (messagesContainerRef.current) {
-      requestAnimationFrame(() => {
-        if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+  // Authentication functions
+  const handleSignIn = async () => {
+    if (!window.electronAPI?.auth) return
+    
+    setIsAuthenticating(true)
+    try {
+      const result = await window.electronAPI.auth.signIn()
+      if (result.success && result.user) {
+        setUser(result.user)
+        
+        // Use consistent API
+        const connection = await window.electronAPI.auth.getGoogleConnection()
+        setGoogleConnection(connection)
+        
+        // Load calendar events after sign in
+        if (connection.isConnected) {
+          setTimeout(() => loadCalendarEvents('today'), 1000) // Slight delay to avoid conflicts
         }
+      } else {
+        console.error('Sign in failed:', result.error)
+      }
+    } catch (error) {
+      console.error('Error signing in:', error)
+    } finally {
+      setIsAuthenticating(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    if (!window.electronAPI?.auth) return
+    
+    try {
+      await window.electronAPI.auth.signOut()
+      setUser(null)
+      setGoogleConnection({ isConnected: false })
+      setCalendarEvents([])
+      setSyncProgress(null) // Clear any ongoing sync progress
+      setSearchResults([]) // Clear drive search results
+      setCurrentMode('chat')
+    } catch (error) {
+      console.error('Error signing out:', error)
+    }
+  }
+
+  // Enhanced sync function with options
+  const handleSync = async (options: { 
+    limit?: number
+    force?: boolean
+    strategy?: 'new_files_only' | 'force_reindex'
+  } = {}) => {
+    if (!window.electronAPI?.drive || !user || !googleConnection.isConnected) {
+      console.error('Cannot sync: missing requirements', { 
+        hasAPI: !!window.electronAPI?.drive, 
+        hasUser: !!user, 
+        isConnected: googleConnection.isConnected 
+      })
+      return
+    }
+    
+    const { limit = 10, force = false, strategy = 'new_files_only' } = options
+    
+    console.log(`🚀 Starting ${strategy} sync with limit ${limit}...`)
+    setIsSyncing(true)
+    setSyncProgress(null)
+    
+    try {
+      const result = await window.electronAPI.drive.sync({ limit, force, strategy })
+      if (result.success) {
+        console.log('✅ Sync completed:', result.result)
+        
+        // Refresh sync stats
+        await refreshSyncStats()
+        
+        // Show success message
+        if (result.result?.message) {
+          console.log('📊 Sync message:', result.result.message)
+        }
+      } else {
+        console.error('❌ Sync failed:', result.error)
+        alert(`Drive sync failed: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('💥 Error syncing:', error)
+      alert(`Drive sync error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  // Quick sync methods
+  const handleQuickSync = () => handleSync({ limit: 5, force: false })
+  const handleDeepSync = () => handleSync({ limit: 20, force: false })
+  const handleForceSync = () => handleSync({ limit: 10, force: true })
+
+  // Load sync stats
+  const refreshSyncStats = async () => {
+    if (!window.electronAPI?.drive || !user) return
+    
+    try {
+      const result = await window.electronAPI.drive.getSyncStats()
+      if (result.success) {
+        setSyncStats(result.stats)
+      }
+    } catch (error) {
+      console.error('Error loading sync stats:', error)
+    }
+  }
+
+  // Search Drive documents - FIXED
+  const handleDriveSearch = async (query: string) => {
+    if (!window.electronAPI?.drive || !user || !googleConnection.isConnected) {
+      console.warn('Drive search skipped: not connected')
+      await sendMessage(query) // Fallback to regular chat
+      return
+    }
+
+    try {
+      console.log('🔍 Starting integrated search for:', query)
+      
+      // Check if it's a calendar-related query
+      const isCalendar = isCalendarQuery(query)
+      
+      let calendarCtx = ''
+      let driveResults = null
+      
+      // Get calendar context if it's a calendar query
+      if (isCalendar && window.electronAPI?.calendar) {
+        try {
+          calendarCtx = await getCalendarContextForAI(query)
+          setCalendarContext(calendarCtx)
+        } catch (error) {
+          console.warn('Calendar context failed:', error)
+        }
+      }
+      
+      // Search Drive for context
+      try {
+        const driveResult = await window.electronAPI.drive.search(query, 5)
+        if (driveResult.success && driveResult.results) {
+          driveResults = driveResult.results
+          setSearchResults(driveResults)
+          console.log(`📄 Found ${driveResults.length} relevant documents`)
+        } else {
+          console.warn('Drive search returned no results:', driveResult.error)
+          setSearchResults([])
+        }
+      } catch (error) {
+        console.error('Drive search failed:', error)
+        setSearchResults([])
+      }
+      
+      // Build comprehensive context message
+      let contextualMessage = query
+      
+      if (calendarCtx) {
+        contextualMessage = `${calendarCtx}\n\nUser question: ${query}`
+      }
+      
+      if (driveResults && driveResults.length > 0) {
+        const driveContextText = driveResults
+          .map(r => `Document: ${r.fileName}\nContent: ${r.content.substring(0, 300)}...`)
+          .join('\n\n')
+        
+        if (calendarCtx) {
+          contextualMessage += `\n\nRelevant documents from Google Drive:\n${driveContextText}`
+        } else {
+          contextualMessage = `Based on your Google Drive documents:\n\n${driveContextText}\n\nUser question: ${query}`
+        }
+      }
+      
+      // Send to AI with all context
+      await sendMessage(contextualMessage, undefined, driveResults || undefined, calendarCtx)
+    } catch (error) {
+      console.error('Error in integrated search:', error)
+      // Fallback to regular message
+      await sendMessage(query)
+    }
+  }
+
+  // Load cleanup candidates
+  const loadCleanupCandidates = async () => {
+    if (!window.electronAPI?.db || !user) return
+    
+    try {
+      const result = await window.electronAPI.db.getCleanupCandidates(50)
+      if (result.success) {
+        setCleanupCandidates(result.candidates || [])
+      }
+    } catch (error) {
+      console.error('Error loading cleanup candidates:', error)
+    }
+  }
+
+  // Delete files
+  const handleDeleteFiles = async (fileIds: string[]) => {
+    if (!window.electronAPI?.drive || !user) return
+    
+    try {
+      const result = await window.electronAPI.drive.deleteFiles(fileIds)
+      if (result.success) {
+        console.log('Delete completed:', result.summary)
+        
+        // Remove deleted files from candidates
+        setCleanupCandidates(prev => 
+          prev.filter(candidate => !fileIds.includes(candidate.id))
+        )
+      }
+    } catch (error) {
+      console.error('Error deleting files:', error)
+    }
+  }
+
+  // Analyze for organization
+  const analyzeForOrganization = async () => {
+    if (!window.electronAPI?.drive || !user) return
+    
+    setIsAnalyzing(true)
+    try {
+      const result = await window.electronAPI.drive.analyzeForOrganization({
+        method: 'hybrid',
+        maxClusters: 6,
+        minClusterSize: 3
+      })
+      
+      if (result.success) {
+        setOrganizationClusters(result.analysis?.clusters || [])
+      }
+    } catch (error) {
+      console.error('Error analyzing for organization:', error)
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  // Calendar helper functions
+  const isCalendarQuery = (query: string): boolean => {
+    const calendarKeywords = [
+      'calendar', 'schedule', 'meeting', 'appointment', 'event',
+      'today', 'tomorrow', 'this week', 'next week', 'coming up',
+      'busy', 'free', 'available', 'when am i', 'what\'s next',
+      'upcoming', 'agenda', 'plans', 'booked'
+    ]
+    
+    const lowerQuery = query.toLowerCase()
+    return calendarKeywords.some(keyword => lowerQuery.includes(keyword))
+  }
+
+  const getCalendarContextForAI = async (query: string): Promise<string> => {
+    if (!window.electronAPI?.calendar || !user) return ''
+    
+    try {
+      const result = await window.electronAPI.calendar.getContext(query)
+      if (result.success && result.context) {
+        return result.context
+      }
+    } catch (error) {
+      console.error('Error getting calendar context:', error)
+    }
+    
+    return ''
+  }
+
+  // Format time helper
+  const formatEventTime = (event: CalendarEvent): string => {
+    if (event.start.date) {
+      return 'All day'
+    }
+    
+    const start = new Date(event.start.dateTime!)
+    const end = new Date(event.end.dateTime!)
+    
+    const formatTime = (date: Date) => {
+      return date.toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
       })
     }
-  }, [])
-
-  // Format response text with bold sections and lists
-  const formatResponse = (text: string) => {
-    // Split by double asterisks for bold sections
-    const parts = text.split(/(\*\*.*?\*\*)/g)
     
-    return parts.map((part, index) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return (
-          <span key={index} className="font-semibold text-blue-200">
-            {part.slice(2, -2)}
-          </span>
-        )
-      }
-      
-      // Handle numbered lists
-      if (part.includes('\n') && /^\d+\./.test(part.trim())) {
-        const lines = part.split('\n').filter(line => line.trim())
-        return (
-          <div key={index} className="space-y-2">
-            {lines.map((line, lineIndex) => {
-              if (/^\d+\./.test(line.trim())) {
-                return (
-                  <div key={lineIndex} className="flex gap-3">
-                    <span className="text-blue-300 font-medium text-sm mt-0.5 flex-shrink-0">
-                      {line.match(/^\d+/)?.[0]}.
-                    </span>
-                    <span className="text-white/90 leading-relaxed">
-                      {line.replace(/^\d+\.\s*/, '')}
-                    </span>
-                  </div>
-                )
-              }
-              return (
-                <p key={lineIndex} className="text-white/90 leading-relaxed">
-                  {line}
-                </p>
-              )
-            })}
-          </div>
-        )
-      }
-      
-      return (
-        <span key={index} className="text-white/90 leading-relaxed">
-          {part}
-        </span>
-      )
-    })
+    return `${formatTime(start)} - ${formatTime(end)}`
   }
 
-  // Copy to clipboard functionality
-  const copyToClipboard = async (text: string, messageId: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedMessageId(messageId)
-      setTimeout(() => setCopiedMessageId(null), 2000)
-    } catch (err) {
-      console.error('Failed to copy text: ', err)
+  // Add smart suggestions based on calendar context
+  const getSmartSuggestions = (): string[] => {
+    const currentHour = new Date().getHours()
+    const suggestions = []
+    
+    if (currentHour < 12) {
+      suggestions.push("What's on my agenda today?")
+      suggestions.push("Do I need to prepare for any meetings?")
+    } else {
+      suggestions.push("How does tomorrow look?")
+      suggestions.push("What's coming up this week?")
     }
+    
+    suggestions.push("When am I free for focused work?")
+    suggestions.push("Show me my busiest days")
+    
+    return suggestions
   }
 
-  // Load available screens
-  const loadAvailableScreens = useCallback(async () => {
-    if (window.electronAPI?.getAvailableScreens) {
-      try {
-        const screens = await window.electronAPI.getAvailableScreens()
-        setAvailableScreens(screens)
-      } catch (error) {
-        console.error('Error loading available screens:', error)
-      }
-    }
-  }, [])
-
-  // Capture primary screen
-  const captureScreen = useCallback(async () => {
-    if (!window.electronAPI?.captureScreen) return null
-    
-    setIsCapturing(true)
-    try {
-      const screenshot = await window.electronAPI.captureScreen()
-      setLastScreenshot(screenshot)
-      return screenshot
-    } catch (error) {
-      console.error('Error capturing screen:', error)
-      return null
-    } finally {
-      setIsCapturing(false)
-    }
-  }, [])
-
-  // Capture specific screen by ID
-  const captureScreenById = useCallback(async (sourceId: string) => {
-    if (!window.electronAPI?.captureScreenById) return null
-    
-    setIsCapturing(true)
-    try {
-      const screenshot = await window.electronAPI.captureScreenById(sourceId)
-      setLastScreenshot(screenshot)
-      return screenshot
-    } catch (error) {
-      console.error('Error capturing screen by ID:', error)
-      return null
-    } finally {
-      setIsCapturing(false)
-    }
-  }, [])
-
-  // Send message to OpenAI with optional screenshot
-  const sendMessage = async (userMessage: string, screenshotDataUrl?: string) => {
+  // Send message with Drive context - FIXED
+  const sendMessage = async (
+    userMessage: string, 
+    screenshotDataUrl?: string, 
+    driveContext?: any[], 
+    calendarContext?: string
+  ) => {
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: userMessage,
       timestamp: new Date(),
       hasScreenshot: !!screenshotDataUrl,
-      screenshotUrl: screenshotDataUrl
+      screenshotUrl: screenshotDataUrl,
+      driveContext
     }
 
     setCurrentResponse(null)
@@ -199,63 +509,71 @@ function App() {
     setInputValue('')
 
     try {
-      console.log('Sending message with screenshot to OpenAI Vision API...')
       const openai = getOpenAI()
       
+      // Build enhanced system prompt with calendar awareness
+      const systemPrompt = `You are Wingman, a helpful AI assistant with access to Google Drive documents and Google Calendar. 
+
+Key capabilities:
+- Access to user's calendar events, schedule analysis, and meeting insights
+- Access to user's Google Drive documents for context
+- Provide scheduling advice, meeting preparation tips, and time management suggestions
+- Help identify conflicts, busy periods, and free time slots
+- Suggest optimal timing for tasks based on calendar availability
+
+When calendar information is provided, use it to give specific, actionable advice about time management, scheduling, and productivity. Consider travel time, meeting preparation needs, and workload distribution.
+
+Be conversational, helpful, and proactive in offering scheduling and productivity insights.`
+      
       if (screenshotDataUrl) {
-        // Use vision API for screenshot analysis
+        // Use vision API with calendar context
         let fullResponse = ''
         await openai.analyzeScreenshotStream(
           screenshotDataUrl,
           (chunk: string) => {
-            console.log('Received chunk:', chunk)
             fullResponse += chunk
             setStreamingText(fullResponse)
-            requestAnimationFrame(() => {
-              updateDimensions()
-            })
+            requestAnimationFrame(() => updateDimensions())
           },
           userMessage
         )
         
-        console.log('Full response received:', fullResponse)
         const assistantMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: fullResponse,
-          timestamp: new Date()
+          timestamp: new Date(),
+          driveContext
         }
 
         setCurrentResponse(assistantMsg)
       } else {
-        console.log('Sending regular text message...')
-        // Regular text chat
-        const contextMessages: Message[] = currentResponse ? [currentResponse, userMsg] : [userMsg]
+        // Regular text chat with enhanced context
         const chatMessages: ChatMessage[] = [
           {
             role: 'system',
-            content: 'You are Wingman, a helpful AI assistant integrated into a desktop app. Keep responses concise and helpful.'
+            content: systemPrompt
           },
-          ...contextMessages.map(msg => ({
-            role: msg.role as 'user' | 'assistant',
-            content: msg.content
-          }))
+          {
+            role: 'user',
+            content: userMessage
+          }
         ]
         
         let fullResponse = ''
         await openai.sendMessageStream(chatMessages, (chunk: string) => {
           fullResponse += chunk
           setStreamingText(fullResponse)
-          requestAnimationFrame(() => {
-            updateDimensions()
-          })
+          requestAnimationFrame(() => updateDimensions())
         })
         
         const assistantMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: fullResponse,
-          timestamp: new Date()
+          timestamp: new Date(),
+          driveContext,
+          calendarContext // Add calendar context to message
         }
 
         setCurrentResponse(assistantMsg)
@@ -269,9 +587,7 @@ function App() {
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: error instanceof Error 
-          ? `Error: ${error.message}. Please check your OpenAI API key and make sure you have access to GPT-4 Vision.` 
-          : 'Sorry, I encountered an error. Please check your API key and try again.',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         timestamp: new Date()
       }
       setCurrentResponse(errorMsg)
@@ -286,121 +602,673 @@ function App() {
     }
   }
 
-  // Handle screenshot capture and analysis
-  const handleScreenshotAndAnalyze = async (question?: string) => {
-    const screenshot = await captureScreen()
-    if (screenshot) {
-      const message = question || "What do you see on my screen?"
-      await sendMessage(message, screenshot)
-      if (!isChatMode) setIsChatMode(true)
+  // Handle input submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const query = inputValue.trim()
+    if (!query || isLoading || isStreaming) return
+
+    // If we have Google connection, search Drive first
+    if (googleConnection.isConnected && currentMode === 'chat') {
+      await handleDriveSearch(query)
+    } else {
+      await sendMessage(query)
     }
   }
 
-  // Handle specific screen capture
-  const handleScreenCapture = async (sourceId: string, question?: string) => {
-    const screenshot = await captureScreenById(sourceId)
-    if (screenshot) {
-      const message = question || "What do you see on this screen?"
-      await sendMessage(message, screenshot)
-      if (!isChatMode) setIsChatMode(true)
-      setShowScreenOptions(false)
-    }
-  }
-
-  // Auto-scroll and resize when response or streaming changes
   useEffect(() => {
-    if (isChatMode && (currentResponse || isStreaming || streamingText)) {
-      requestAnimationFrame(() => {
-        scrollToBottom()
-        updateDimensions()
-      })
+    console.log('Setting up Drive mode toggle listener...')
+    
+    if (window.electronAPI?.onToggleDriveMode) {
+      const handleToggleDriveMode = () => {
+        console.log('🎯 Drive mode toggle received from main process')
+        setCurrentMode('drive')
+        
+        // Ensure window is visible and focused
+        if (window.electronAPI?.showWindow) {
+          window.electronAPI.showWindow()
+        }
+      }
+      
+      window.electronAPI.onToggleDriveMode(handleToggleDriveMode)
+      console.log('✅ Drive mode toggle listener set up successfully')
+      
+      return () => {
+        console.log('Cleaning up Drive mode toggle listener')
+      }
+    } else {
+      console.log('❌ window.electronAPI?.onToggleDriveMode not available')
     }
-  }, [currentResponse, isStreaming, streamingText, isChatMode, scrollToBottom, updateDimensions])
+  }, [])
 
-  // Handle keyboard shortcuts
+  // Keep your keyboard shortcut handler as is:
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+Enter to toggle chat mode
+      // Cmd+Shift+D for Drive mode
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
+        console.log('Cmd+Shift+D pressed in React component')
+        e.preventDefault()
+        setCurrentMode('drive')
+        
+        if (window.electronAPI?.showWindow) {
+          window.electronAPI.showWindow()
+        }
+      }
+      
+      // Cmd+Shift+C for Calendar mode
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'C') {
+        e.preventDefault()
+        setCurrentMode('calendar')
+        
+        // Load calendar events when switching to calendar mode
+        if (user && googleConnection.isConnected) {
+          loadCalendarEvents(selectedCalendarRange)
+        }
+        
+        if (window.electronAPI?.showWindow) {
+          window.electronAPI.showWindow()
+        }
+      }
+      
+      // Cmd+Shift+P for Profile mode
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'P') {
+        e.preventDefault()
+        setCurrentMode('profile')
+        
+        if (window.electronAPI?.showWindow) {
+          window.electronAPI.showWindow()
+        }
+      }
+      
+      // Cmd+Enter to cycle through modes (only if authenticated)
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
-        const newChatMode = !isChatMode
-        setIsChatMode(newChatMode)
-        if (newChatMode) {
-          setTimeout(() => {
-            inputRef.current?.focus()
-            scrollToBottom()
-          }, 200)
+        if (user && googleConnection.isConnected) {
+          setCurrentMode(prev => {
+            const modes: AppMode[] = ['chat', 'drive', 'calendar', 'profile', 'cleanup', 'organize']
+            const currentIndex = modes.indexOf(prev)
+            const nextMode = modes[(currentIndex + 1) % modes.length]
+            
+            // Load calendar events when switching to calendar mode
+            if (nextMode === 'calendar') {
+              loadCalendarEvents(selectedCalendarRange)
+            }
+            
+            return nextMode
+          })
+        } else {
+          setCurrentMode('drive')
         }
       }
       
-      // Cmd+Shift+S for quick screenshot
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'S') {
-        e.preventDefault()
-        handleScreenshotAndAnalyze()
-      }
-      
-      // Cmd+Shift+D for screen selection
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
-        e.preventDefault()
-        setShowScreenOptions(!showScreenOptions)
-        if (!showScreenOptions) {
-          loadAvailableScreens()
-        }
-      }
-      
-      // Escape to exit chat mode or close screen options
+      // Escape to return to chat
       if (e.key === 'Escape') {
-        if (showScreenOptions) {
-          setShowScreenOptions(false)
-        } else if (isChatMode) {
-          setIsChatMode(false)
-          setInputValue('')
-          setCurrentResponse(null)
-          setStreamingText('')
-          setIsStreaming(false)
-          setLastScreenshot(null)
-        }
+        setCurrentMode('chat')
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isChatMode, showScreenOptions, scrollToBottom, handleScreenshotAndAnalyze, loadAvailableScreens])
+  }, [user, googleConnection, selectedCalendarRange])
 
-  // Handle input changes
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value)
-    if (!isChatMode && e.target.value.trim()) {
-      setIsChatMode(true)
-      setTimeout(scrollToBottom, 100)
-    }
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (inputValue.trim() && !isLoading && !isStreaming) {
-      sendMessage(inputValue.trim())
-    }
-  }
-
-  // Listen for global screenshot capture
+  // Debug: Add this useEffect to log mode changes
   useEffect(() => {
-    if (window.electronAPI?.onScreenshotCaptured) {
-      window.electronAPI.onScreenshotCaptured((screenshot: string) => {
-        setLastScreenshot(screenshot)
-        sendMessage("What do you see on my screen?", screenshot)
-        if (!isChatMode) setIsChatMode(true)
-      })
+    console.log('🔄 Mode changed to:', currentMode)
+    
+    // Load calendar events when switching to calendar mode
+    if (currentMode === 'calendar' && user && googleConnection.isConnected && calendarEvents.length === 0 && !isLoadingCalendar) {
+      loadCalendarEvents(selectedCalendarRange)
     }
-  }, [isChatMode])
+  }, [currentMode, user, googleConnection.isConnected])
 
+  // Render mode content
+  const renderModeContent = () => {
+    if (!user) {
+      return (
+        <div className="p-6 text-center">
+          <h3 className="text-white text-lg mb-4">Sign in to access Google Drive & Calendar</h3>
+          <AuthButton
+            user={user}
+            googleConnection={googleConnection}
+            onSignIn={handleSignIn}
+            onSignOut={handleSignOut}
+            className="mx-auto"
+          />
+        </div>
+      )
+    }
+
+    switch (currentMode) {
+      case 'drive':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">Drive Management</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleQuickSync}
+                    disabled={isSyncing || !googleConnection.isConnected}
+                    className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs rounded transition-colors disabled:opacity-50"
+                    title="Sync 5 new files"
+                  >
+                    {isSyncing ? 'Syncing...' : 'Quick'}
+                  </button>
+                  <button
+                    onClick={handleDeepSync}
+                    disabled={isSyncing || !googleConnection.isConnected}
+                    className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs rounded transition-colors disabled:opacity-50"
+                    title="Sync 20 new files"
+                  >
+                    Deep
+                  </button>
+                  <button
+                    onClick={handleForceSync}
+                    disabled={isSyncing || !googleConnection.isConnected}
+                    className="px-3 py-1 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 text-xs rounded transition-colors disabled:opacity-50"
+                    title="Force reindex 10 files"
+                  >
+                    Force
+                  </button>
+                </div>
+              </div>
+
+              {/* Connection Status */}
+              <div className={`text-xs px-3 py-2 rounded-lg border ${
+                googleConnection.isConnected 
+                  ? 'bg-green-500/10 border-green-400/20 text-green-300'
+                  : 'bg-red-500/10 border-red-400/20 text-red-300'
+              }`}>
+                {googleConnection.isConnected ? '✅ Drive Connected' : '❌ Drive Disconnected'}
+              </div>
+
+              {/* Sync Stats */}
+              {syncStats && (
+                <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
+                  <div className="text-white/80 text-sm mb-2">📊 Sync Statistics</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="text-white/60">
+                      📄 Documents: <span className="text-white">{syncStats.totalDocuments}</span>
+                    </div>
+                    <div className="text-white/60">
+                      🧠 Indexed: <span className="text-white">{syncStats.indexedFiles}</span>
+                    </div>
+                    <div className="text-white/60">
+                      🔗 Embeddings: <span className="text-white">{syncStats.totalEmbeddings}</span>
+                    </div>
+                    <div className="text-white/60">
+                      📈 Avg/File: <span className="text-white">{syncStats.averageEmbeddingsPerFile?.toFixed(1) || '0'}</span>
+                    </div>
+                  </div>
+                  {syncStats.lastSyncTime && (
+                    <div className="text-white/60 text-xs mt-2">
+                      🕒 Last sync: {new Date(syncStats.lastSyncTime).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {syncProgress && (
+                <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
+                  <div className="text-white/80 text-sm mb-2">
+                    Processing: {syncProgress.currentFile}
+                  </div>
+                  <div className="w-full bg-blue-500/20 rounded-full h-2">
+                    <div 
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(syncProgress.processedFiles / syncProgress.totalFiles) * 100}%` }}
+                    />
+                  </div>
+                  <div className="text-white/60 text-xs mt-1">
+                    {syncProgress.processedFiles}/{syncProgress.totalFiles} files • {syncProgress.embeddingsCreated} indexed • {syncProgress.skipped} skipped
+                  </div>
+                  {syncProgress.errors > 0 && (
+                    <div className="text-red-300 text-xs mt-1">
+                      ⚠️ {syncProgress.errors} errors
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setCurrentMode('cleanup')}
+                  className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  🗑️ Cleanup
+                </button>
+                <button
+                  onClick={() => setCurrentMode('organize')}
+                  className="p-3 bg-green-500/10 hover:bg-green-500/20 border border-green-400/30 rounded-lg text-white/80 text-sm transition-colors"
+                >
+                  📁 Organize
+                </button>
+              </div>
+
+              {/* Sync Strategy Explanation */}
+              <div className="text-xs text-white/40 space-y-1">
+                <div>💡 <strong>Quick:</strong> 5 newest unprocessed files</div>
+                <div>🔍 <strong>Deep:</strong> 20 newest unprocessed files</div>
+                <div>🔄 <strong>Force:</strong> Reprocess 10 recent files</div>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'cleanup':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">Drive Cleanup</h3>
+                <button
+                  onClick={loadCleanupCandidates}
+                  disabled={!googleConnection.isConnected}
+                  className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded text-sm text-white transition-colors disabled:opacity-50"
+                >
+                  Scan
+                </button>
+              </div>
+              
+              {cleanupCandidates.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {cleanupCandidates.slice(0, 10).map((candidate) => (
+                    <div
+                      key={candidate.id}
+                      className="bg-red-500/10 border border-red-400/20 rounded-lg p-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white/90 text-sm font-medium truncate">
+                            {candidate.name}
+                          </div>
+                          <div className="text-red-300 text-xs mt-1">
+                            {candidate.reason} • {candidate.confidence} confidence
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteFiles([candidate.id])}
+                          className="ml-2 px-2 py-1 bg-red-500/30 hover:bg-red-500/50 rounded text-xs text-white transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {cleanupCandidates.length > 10 && (
+                    <div className="text-center">
+                      <button
+                        onClick={() => {
+                          const selectedIds = cleanupCandidates
+                            .filter(c => c.confidence === 'high')
+                            .map(c => c.id)
+                          handleDeleteFiles(selectedIds)
+                        }}
+                        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded text-sm text-white transition-colors"
+                      >
+                        Delete All High Confidence ({cleanupCandidates.filter(c => c.confidence === 'high').length})
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {cleanupCandidates.length === 0 && (
+                <div className="text-center text-white/60 py-8">
+                  No cleanup candidates found.<br />
+                  Click "Scan" to analyze your Drive.
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
+      case 'organize':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">File Organization</h3>
+                <button
+                  onClick={analyzeForOrganization}
+                  disabled={isAnalyzing || !googleConnection.isConnected}
+                  className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded text-sm text-white transition-colors disabled:opacity-50"
+                >
+                  {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                </button>
+              </div>
+              
+              {organizationClusters.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {organizationClusters.map((cluster) => (
+                    <div
+                      key={cluster.id}
+                      className="bg-green-500/10 border border-green-400/20 rounded-lg p-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white/90 text-sm font-medium">
+                            {cluster.name}
+                          </div>
+                          <div className="text-green-300 text-xs mt-1">
+                            {cluster.files.length} files • {cluster.category}
+                          </div>
+                          <div className="text-white/60 text-xs mt-1">
+                            → {cluster.suggestedFolderName}
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const result = await window.electronAPI.drive.organizeFiles({
+                                clusters: [cluster]
+                              })
+                              if (result.success) {
+                                console.log('Organization completed for cluster:', cluster.name)
+                              }
+                            } catch (error) {
+                              console.error('Error organizing cluster:', error)
+                            }
+                          }}
+                          className="ml-2 px-2 py-1 bg-green-500/30 hover:bg-green-500/50 rounded text-xs text-white transition-colors"
+                        >
+                          Create
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="text-center">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const result = await window.electronAPI.drive.organizeFiles({
+                            clusters: organizationClusters
+                          })
+                          if (result.success) {
+                            console.log('Organization completed for all clusters')
+                            setOrganizationClusters([])
+                          }
+                        } catch (error) {
+                          console.error('Error organizing all clusters:', error)
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded text-sm text-white transition-colors"
+                    >
+                      Organize All ({organizationClusters.length} folders)
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {organizationClusters.length === 0 && !isAnalyzing && (
+                <div className="text-center text-white/60 py-8">
+                  No organization suggestions.<br />
+                  Click "Analyze" to get smart folder suggestions.
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
+      case 'calendar':
+        return (
+          <div className="p-4" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-medium">Calendar</h3>
+                <div className="flex gap-1">
+                  {(['today', 'week', 'next-week'] as const).map((range) => (
+                    <button
+                      key={range}
+                      onClick={() => handleCalendarRangeChange(range)}
+                      disabled={isLoadingCalendar || !googleConnection.isConnected}
+                      className={`px-2 py-1 text-xs rounded transition-colors disabled:opacity-50 ${
+                        selectedCalendarRange === range
+                          ? 'bg-purple-500/30 border border-purple-400/50 text-white'
+                          : 'bg-purple-500/10 border border-purple-400/20 text-white/70 hover:bg-purple-500/20'
+                      }`}
+                    >
+                      {range === 'today' ? 'Today' : range === 'week' ? 'This Week' : 'Next Week'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Loading state */}
+              {isLoadingCalendar && (
+                <div className="text-center py-4">
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
+                    </div>
+                    <span className="text-purple-300 text-sm">Loading events...</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Calendar Events */}
+              {!isLoadingCalendar && calendarEvents.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                  <div className="text-white/60 text-xs mb-2">
+                    {calendarEvents.length} event{calendarEvents.length !== 1 ? 's' : ''} found
+                  </div>
+                  {calendarEvents.map((event) => (
+                    <div
+                      key={event.id}
+                      className="bg-purple-500/10 border border-purple-400/20 rounded-lg p-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white/90 text-sm font-medium truncate">
+                            {event.summary}
+                          </div>
+                          <div className="text-purple-300 text-xs mt-1">
+                            {formatEventTime(event)}
+                          </div>
+                          {event.location && (
+                            <div className="text-white/60 text-xs mt-1 truncate">
+                              📍 {event.location}
+                            </div>
+                          )}
+                          {event.attendees && event.attendees.length > 1 && (
+                            <div className="text-white/60 text-xs mt-1">
+                              👥 {event.attendees.length} attendees
+                            </div>
+                          )}
+                        </div>
+                        {event.htmlLink && (
+                          <button
+                            onClick={() => {
+                              // Open in external browser via Electron
+                              console.log('Opening event in browser:', event.htmlLink)
+                            }}
+                            className="ml-2 px-2 py-1 bg-purple-500/30 hover:bg-purple-500/50 rounded text-xs text-white transition-colors"
+                          >
+                            Open
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* No events */}
+              {!isLoadingCalendar && calendarEvents.length === 0 && (
+                <div className="text-center text-white/60 py-8">
+                  <div className="text-4xl mb-3">📅</div>
+                  <div>No events found for {selectedCalendarRange === 'today' ? 'today' : selectedCalendarRange === 'week' ? 'this week' : 'next week'}</div>
+                  <div className="text-sm mt-2">Your schedule is clear!</div>
+                </div>
+              )}
+              
+              <div className="pt-2 border-t border-purple-500/10">
+                <button
+                  onClick={() => setCurrentMode('chat')}
+                  className="w-full px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/30 rounded text-sm text-white transition-colors"
+                >
+                  💬 Ask about your schedule
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'profile':
+        return (
+          <div className="p-4 max-h-96 overflow-y-auto custom-scrollbar" style={{ WebkitAppRegion: 'no-drag' }}>
+            <div className="space-y-4">
+              {/* User Info Section */}
+              <div className="space-y-3">
+                <h3 className="text-white font-medium">User Profile</h3>
+                
+                <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-4">
+                  <div className="flex items-center gap-4">
+                    {user?.photoURL && (
+                      <img 
+                        src={user.photoURL} 
+                        alt={user.displayName}
+                        className="w-16 h-16 rounded-full border-2 border-blue-400/30"
+                      />
+                    )}
+                    <div className="flex-1">
+                      <div className="text-white font-medium text-lg">{user?.displayName}</div>
+                      <div className="text-white/70 text-sm">{user?.email}</div>
+                      <div className="text-blue-300 text-xs mt-1 font-mono">
+                        ID: {user?.uid}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Services Status Section */}
+              <div className="space-y-3">
+                <h4 className="text-white/80 font-medium text-sm">Connected Services</h4>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-3 bg-green-500/10 border border-green-400/20 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${googleConnection.isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                      <div>
+                        <div className="text-white/90 text-sm font-medium">Google Drive</div>
+                        <div className="text-white/60 text-xs">File storage and search</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-white/60">
+                      {googleConnection.isConnected ? 'Connected' : 'Disconnected'}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-purple-500/10 border border-purple-400/20 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${googleConnection.isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                      <div>
+                        <div className="text-white/90 text-sm font-medium">Google Calendar</div>
+                        <div className="text-white/60 text-xs">Schedule and events</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-white/60">
+                      {googleConnection.isConnected ? 'Connected' : 'Disconnected'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sync Status Section */}
+              {googleConnection.isConnected && (
+                <div className="space-y-3">
+                  <h4 className="text-white/80 font-medium text-sm">Sync Status</h4>
+                  
+                  <div className="bg-gray-500/10 border border-gray-400/20 rounded-lg p-3">
+                    <div className="space-y-2 text-xs">
+                      {googleConnection.lastDriveSyncAt && (
+                        <div className="flex justify-between">
+                          <span className="text-white/60">Last Drive sync:</span>
+                          <span className="text-white/80">
+                            {new Date(googleConnection.lastDriveSyncAt).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {googleConnection.lastCalendarSyncAt && (
+                        <div className="flex justify-between">
+                          <span className="text-white/60">Last Calendar sync:</span>
+                          <span className="text-white/80">
+                            {new Date(googleConnection.lastCalendarSyncAt).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+
+                      {googleConnection.connectedAt && (
+                        <div className="flex justify-between">
+                          <span className="text-white/60">Connected since:</span>
+                          <span className="text-white/80">
+                            {new Date(googleConnection.connectedAt).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Today's Schedule Preview */}
+              {calendarEvents.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-white/80 font-medium text-sm">Today's Schedule</h4>
+                  
+                  <div className="bg-purple-500/10 border border-purple-400/20 rounded-lg p-3">
+                    <div className="text-xs text-purple-300 mb-2">
+                      {calendarEvents.length} event{calendarEvents.length !== 1 ? 's' : ''} scheduled
+                    </div>
+                    <div className="space-y-1 max-h-24 overflow-y-auto custom-scrollbar">
+                      {calendarEvents.slice(0, 5).map((event, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <div className="w-1 h-1 bg-purple-400 rounded-full"></div>
+                          <div className="text-xs text-white/70 truncate flex-1">
+                            {formatEventTime(event)} - {event.summary}
+                          </div>
+                        </div>
+                      ))}
+                      {calendarEvents.length > 5 && (
+                        <div className="text-xs text-white/50 pl-3">
+                          +{calendarEvents.length - 5} more events...
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sign Out */}
+              <div className="pt-3 border-t border-blue-500/10">
+                <button
+                  onClick={handleSignOut}
+                  className="w-full px-4 py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded-lg text-white text-sm transition-colors font-medium"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+      default: // chat mode
+        return null
+    }
+  }
+
+  // Initialize app
   useEffect(() => {
     // Initialize OpenAI service
     const apiKey = import.meta.env.VITE_OPENAI_API_KEY
     if (apiKey) {
       initializeOpenAI(apiKey)
-    } else {
-      console.warn('OpenAI API key not found. Please add VITE_OPENAI_API_KEY to your .env file')
     }
 
     if (window.electronAPI) {
@@ -409,36 +1277,16 @@ function App() {
         setIsInitialized(true)
         setTimeout(updateDimensions, 150)
       })
-      
-      window.electronAPI.onShortcutTestSuccess(() => {
-        setShortcutTestSuccess(true)
-        setTimeout(updateDimensions, 100)
-      })
     } else {
       setIsInitialized(true)
     }
 
-    loadAvailableScreens()
-
     const initialTimeout = setTimeout(updateDimensions, 200)
-    
-    const resizeObserver = new ResizeObserver(() => {
-      setTimeout(updateDimensions, 50)
-    })
-    
-    if (contentRef.current) {
-      resizeObserver.observe(contentRef.current)
-    }
+    return () => clearTimeout(initialTimeout)
+  }, [updateDimensions])
 
-    return () => {
-      clearTimeout(initialTimeout)
-      resizeObserver.disconnect()
-    }
-  }, [updateDimensions, loadAvailableScreens])
-
-  // SIMPLIFIED DRAG HANDLERS
+  // Drag handlers (simplified for brevity)
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Don't drag if clicking on interactive elements
     const target = e.target as HTMLElement
     if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || 
         target.closest('button') || target.closest('input')) {
@@ -447,50 +1295,8 @@ function App() {
     
     e.preventDefault()
     setIsDragging(true)
-    setDragStart({
-      x: e.clientX,
-      y: e.clientY
-    })
+    setDragStart({ x: e.clientX, y: e.clientY })
   }
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (isDragging && window.electronAPI) {
-      e.preventDefault()
-      
-      const deltaX = e.clientX - dragStart.x
-      const deltaY = e.clientY - dragStart.y
-      
-      window.electronAPI.dragWindow({ deltaX, deltaY })
-      setDragStart({ x: e.clientX, y: e.clientY })
-    }
-  }, [isDragging, dragStart])
-
-  const handleMouseUp = useCallback((e: MouseEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }, [])
-
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove, { passive: false })
-      document.addEventListener('mouseup', handleMouseUp, { passive: false })
-      document.body.style.userSelect = 'none'
-      document.body.style.pointerEvents = 'none'
-      document.body.style.cursor = 'grabbing'
-    } else {
-      document.body.style.userSelect = ''
-      document.body.style.pointerEvents = ''
-      document.body.style.cursor = ''
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-      document.body.style.userSelect = ''
-      document.body.style.pointerEvents = ''
-      document.body.style.cursor = ''
-    }
-  }, [isDragging, handleMouseMove, handleMouseUp])
 
   return (
     <div 
@@ -501,221 +1307,212 @@ function App() {
       style={{ 
         width: 'fit-content', 
         height: 'fit-content',
-        minWidth: '480px',
-        maxWidth: '680px',
+        minWidth: currentMode === 'chat' ? '480px' : '500px',
+        maxWidth: '700px',
         transformOrigin: 'center center'
       }}
     >
-      {/* ========== CHAT HEADER - ALWAYS VISIBLE ========== */}
+      {/* Header */}
       <div 
-        ref={headerRef}
         className={`px-4 py-3 bg-black/95 backdrop-blur-lg cursor-grab ${isDragging ? 'cursor-grabbing' : ''}`}
         onMouseDown={handleMouseDown}
-        style={{ 
-          WebkitAppRegion: 'drag',
-          position: 'sticky',
-          top: 0,
-          zIndex: 100
-        }}
+        style={{ WebkitAppRegion: 'drag' }}
       >
-        {/* Status indicator and action buttons */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className={`w-2.5 h-2.5 rounded-full ${
-                isCapturing ? 'bg-orange-400' : 
+                isSyncing ? 'bg-orange-400' : 
                 isStreaming ? 'bg-blue-400' : 
+                isLoadingCalendar ? 'bg-purple-400' :
                 'bg-green-400'
               } animate-pulse`}></div>
             </div>
             
             <div>
-              <h1 className="text-white font-medium text-sm">Wingman</h1>
+              <h1 className="text-white font-medium text-sm">
+                Wingman {user && googleConnection.isConnected && `• ${currentMode}`}
+              </h1>
               <p className="text-white/50 text-xs">
-                {isCapturing ? 'Capturing...' : 
-                 isStreaming ? 'Thinking...' :
-                 'Ready'}
+                {user ? `${user.displayName} • ${googleConnection.isConnected ? 'Google Services Connected' : 'Google Services Disconnected'}` : 'Not signed in'}
+                {currentMode === 'calendar' && calendarEvents.length > 0 && ` • ${calendarEvents.length} events`}
               </p>
             </div>
           </div>
           
           <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
-            <button
-              onClick={() => handleScreenshotAndAnalyze(inputValue || undefined)}
-              disabled={isCapturing || isLoading}
-              className="p-2 bg-blue-500/20 hover:bg-blue-500/30 disabled:opacity-50 border border-blue-400/30 rounded-lg text-sm transition-colors"
-              title="Capture screen (⌘⇧S)"
-            >
-              📸
-            </button>
-            
-            <button
-              onClick={() => {
-                setShowScreenOptions(!showScreenOptions)
-                if (!showScreenOptions) loadAvailableScreens()
-              }}
-              className="p-2 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/30 rounded-lg text-sm transition-colors"
-              title="Select screen (⌘⇧D)"
-            >
-              🖥️
-            </button>
+            {user && (
+              <>
+                <button
+                  onClick={() => setCurrentMode('drive')}
+                  className={`p-2 border rounded-lg text-sm transition-colors ${
+                    currentMode === 'drive' 
+                      ? 'bg-blue-500/30 border-blue-400/50' 
+                      : 'bg-blue-500/10 border-blue-400/20 hover:bg-blue-500/20'
+                  }`}
+                  title="Drive mode (⌘⇧D)"
+                >
+                  💾
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentMode('calendar')
+                    if (googleConnection.isConnected) {
+                      loadCalendarEvents(selectedCalendarRange)
+                    }
+                  }}
+                  className={`p-2 border rounded-lg text-sm transition-colors ${
+                    currentMode === 'calendar' 
+                      ? 'bg-purple-500/30 border-purple-400/50' 
+                      : 'bg-purple-500/10 border-purple-400/20 hover:bg-purple-500/20'
+                  }`}
+                  title="Calendar mode (⌘⇧C)"
+                >
+                  📅
+                </button>
+                <button
+                  onClick={() => setCurrentMode('profile')}
+                  className={`p-2 border rounded-lg text-sm transition-colors ${
+                    currentMode === 'profile' 
+                      ? 'bg-green-500/30 border-green-400/50' 
+                      : 'bg-green-500/10 border-green-400/20 hover:bg-green-500/20'
+                  }`}
+                  title="Profile (⌘⇧P)"
+                >
+                  👤
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Chat Input - Part of Header */}
-        <div className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit(e))}
-            placeholder="Type a message..."
-            className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-20 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
-            disabled={isLoading || isStreaming}
-            autoFocus
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={!inputValue.trim() || isLoading || isStreaming}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
-          >
-            {isLoading ? '...' : 'Send'}
-          </button>
-        </div>
+        {/* Chat Input */}
+        {currentMode === 'chat' && (
+          <div className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit(e))}
+              placeholder={googleConnection.isConnected ? "Ask about your Drive, calendar, or anything..." : "Type a message..."}
+              className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-20 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
+              disabled={isLoading || isStreaming}
+              autoFocus
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={!inputValue.trim() || isLoading || isStreaming}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
+            >
+              {isLoading ? '...' : 'Send'}
+            </button>
+          </div>
+        )}
 
-        {/* Shortcuts hint */}
+        {/* Mode shortcuts */}
         <div className="mt-2 text-center">
-          <span className="text-white/30 text-xs">⌘⇧S Screenshot • ⌘⇧D Select • ⎋ Close</span>
+          <span className="text-white/30 text-xs">
+            {user ? '⌘↵ Switch • ⌘⇧D Drive • ⌘⇧C Calendar • ⌘⇧P Profile • ⎋ Chat' : '⌘⇧S Screenshot • ⎋ Close'}
+          </span>
         </div>
       </div>
 
-      {/* Screen Selection Dropdown */}
-      {showScreenOptions && (
-        <div className="p-4 border-b border-blue-500/10 bg-black/90" style={{ WebkitAppRegion: 'no-drag' }}>
-          <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
-            <h3 className="text-white/80 text-sm mb-3">Select Screen</h3>
-            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-              {availableScreens.map((screen) => (
-                <button
-                  key={screen.id}
-                  onClick={() => handleScreenCapture(screen.id)}
-                  className="bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/20 rounded-lg p-2 text-left transition-colors"
-                >
-                  <img 
-                    src={screen.thumbnail} 
-                    alt={screen.name}
-                    className="w-full h-16 object-cover rounded mb-1"
-                  />
-                  <p className="text-white/70 text-xs truncate">{screen.name}</p>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowScreenOptions(false)}
-              className="mt-2 w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/20 px-3 py-2 rounded-lg text-white/80 text-xs transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Mode Content */}
+      {currentMode !== 'chat' && renderModeContent()}
 
-      {/* Messages Area - Clean minimal response */}
-      {(streamingText || isStreaming || currentResponse) && (
-        <div 
-          ref={messagesContainerRef}
-          className="px-6 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          {/* Streaming response */}
+      {/* Chat Messages */}
+      {currentMode === 'chat' && (streamingText || isStreaming || currentResponse) && (
+        <div className="px-6 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar">
           {(streamingText || isStreaming) && (
-            <div className="group relative">
-              <button
-                onClick={() => streamingText && copyToClipboard(streamingText, 'streaming')}
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 hover:bg-white/10 rounded-md transition-all duration-200 z-10"
-                title="Copy response"
-              >
-                {copiedMessageId === 'streaming' ? (
-                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                  </svg>
-                )}
-              </button>
-              
-              <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4 pr-14 streaming-container">
-                <div className="text-sm leading-relaxed space-y-3 text-white/90 select-text max-w-none streaming-text">
-                  {streamingText ? (
-                    formatResponse(streamingText)
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <div className="flex gap-1">
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
-                      </div>
-                      <span className="text-blue-300 text-sm font-medium">Analyzing...</span>
+            <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4">
+              <div className="text-sm leading-relaxed space-y-3 text-white/90">
+                {streamingText || (
+                  <div className="flex items-center gap-3">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Final response */}
-          {currentResponse && !isStreaming && (
-            <div className="group relative">
-              <button
-                onClick={() => copyToClipboard(currentResponse.content, currentResponse.id)}
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 hover:bg-white/10 rounded-md transition-all duration-200 z-10"
-                title="Copy response"
-              >
-                {copiedMessageId === currentResponse.id ? (
-                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                  </svg>
+                    <span className="text-blue-300 text-sm font-medium">
+                      {googleConnection.isConnected ? 'Searching Drive & Calendar & analyzing...' : 'Analyzing...'}
+                    </span>
+                  </div>
                 )}
-              </button>
-              
-              <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4 pr-14 final-response">
-                <div className="text-sm leading-relaxed space-y-3 text-white/90 select-text max-w-none">
-                  {formatResponse(currentResponse.content)}
-                </div>
               </div>
             </div>
           )}
           
-          <div ref={messagesEndRef} />
+          {currentResponse && !isStreaming && (
+            <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4">
+              <div className="text-sm leading-relaxed space-y-3 text-white/90">
+                {currentResponse.content}
+              </div>
+              
+              {/* Show Calendar context if available */}
+              {currentResponse.calendarContext && (
+                <div className="mt-4 pt-3 border-t border-purple-400/10">
+                  <div className="text-xs text-purple-300 mb-2">📅 Calendar Analysis:</div>
+                  <div className="text-xs text-white/70 bg-purple-500/5 border border-purple-400/10 rounded p-2 max-h-32 overflow-y-auto custom-scrollbar">
+                    {currentResponse.calendarContext.split('\n').map((line, idx) => (
+                      <div key={idx} className="mb-1">{line}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Show Drive context if available */}
+              {currentResponse.driveContext && currentResponse.driveContext.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-blue-400/10">
+                  <div className="text-xs text-blue-300 mb-2">📄 Referenced Documents:</div>
+                  <div className="space-y-1">
+                    {currentResponse.driveContext.map((doc, idx) => (
+                      <div key={idx} className="text-xs text-white/60 truncate">
+                        • {doc.fileName}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Compact mode welcome content - Only shows when not in chat mode and no messages */}
-      {!currentResponse && !streamingText && !isStreaming && (
+      {/* Welcome content for chat mode */}
+      {currentMode === 'chat' && !currentResponse && !streamingText && !isStreaming && (
         <div className="p-5 bg-black/30">
-          {shortcutTestSuccess && (
-            <div className="mb-4">
-              <div className="bg-green-500/20 border border-green-400/30 rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
-                  <span className="text-green-300 text-sm">Test successful</span>
+          <div className="text-center">
+            <h2 className="text-white text-lg mb-2">
+              {user ? `Welcome back, ${user.displayName?.split(' ')[0]}!` : 'Ready to help'}
+            </h2>
+            <p className="text-white/50 text-sm mb-4">
+              {googleConnection.isConnected 
+                ? 'I can search your Drive, check your calendar, and help with scheduling and productivity'
+                : 'Type above, press ⌘⇧S to capture screen, or sign in for Drive & Calendar access'
+              }
+            </p>
+            
+            {/* Smart Suggestions */}
+            {user && googleConnection.isConnected && (
+              <div className="mb-4">
+                <div className="text-white/40 text-xs mb-2">Try asking:</div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {getSmartSuggestions().slice(0, 3).map((suggestion, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setInputValue(suggestion)
+                        inputRef.current?.focus()
+                      }}
+                      className="px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/20 rounded-full text-xs text-white/70 hover:text-white transition-colors"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
-          )}
-          
-          <div className="text-center">
-            <h2 className="text-white text-lg mb-2">Ready to help</h2>
-            <p className="text-white/50 text-sm mb-4">
-              Type above, press <kbd className="bg-white/10 px-2 py-1 rounded text-xs">⌘⇧S</kbd> to capture screen, or <kbd className="bg-white/10 px-2 py-1 rounded text-xs">⌘↵</kbd> to chat
-            </p>
+            )}
             
             {appVersion && (
               <div className="pt-3 border-t border-blue-500/10">
@@ -723,7 +1520,9 @@ function App() {
                   <span className="text-white/30">v{appVersion}</span>
                   <div className="flex items-center gap-2">
                     <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
-                    <span className="text-white/30">Vision Ready</span>
+                    <span className="text-white/30">
+                      {googleConnection.isConnected ? 'Drive + Calendar + Vision Ready' : 'Vision Ready'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -736,73 +1535,3 @@ function App() {
 }
 
 export default App
-
-// Simple, smooth animation styles
-const animationStyles = `
-/* Smooth container appearance */
-.streaming-container {
-  animation: slideIn 0.3s ease-out;
-}
-
-.final-response {
-  animation: fadeIn 0.4s ease-out;
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Smooth text content changes */
-.streaming-text {
-  transition: all 0.15s ease-out;
-}
-
-/* Better loading animation */
-@keyframes pulse-smooth {
-  0%, 100% {
-    opacity: 0.4;
-    transform: scale(0.9);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.1);
-  }
-}
-
-.animate-pulse {
-  animation: pulse-smooth 1.8s ease-in-out infinite;
-}
-
-/* Subtle hover effects */
-.group:hover .streaming-container,
-.group:hover .final-response {
-  transform: translateY(-1px);
-  transition: transform 0.2s ease-out;
-}
-`
-
-// Inject styles into document
-if (typeof document !== 'undefined') {
-  const styleElement = document.createElement('style')
-  styleElement.textContent = animationStyles
-  if (!document.head.querySelector('style[data-wingman-styles]')) {
-    styleElement.setAttribute('data-wingman-styles', 'true')
-    document.head.appendChild(styleElement)
-  }
-}
