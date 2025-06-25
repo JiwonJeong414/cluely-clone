@@ -1,4 +1,23 @@
-// electron/main.ts - Simplified version without service imports
+// electron/main.ts - Add this at the TOP before any other imports
+import dotenv from 'dotenv'
+import { resolve } from 'path'
+
+// Load environment variables from .env file
+dotenv.config({ path: resolve(__dirname, '../.env') })
+
+// Add debug logging for API key troubleshooting
+console.log('🔍 MAIN PROCESS DEBUG:')
+console.log('NODE_ENV:', process.env.NODE_ENV)
+console.log('GOOGLE_MAPS_API_KEY exists:', !!process.env.GOOGLE_MAPS_API_KEY)
+console.log('VITE_GOOGLE_MAPS_API_KEY exists:', !!process.env.VITE_GOOGLE_MAPS_API_KEY)
+if (process.env.GOOGLE_MAPS_API_KEY) {
+  console.log('GOOGLE_MAPS_API_KEY preview:', process.env.GOOGLE_MAPS_API_KEY.substring(0, 12) + '...')
+}
+if (process.env.VITE_GOOGLE_MAPS_API_KEY) {
+  console.log('VITE_GOOGLE_MAPS_API_KEY preview:', process.env.VITE_GOOGLE_MAPS_API_KEY.substring(0, 12) + '...')
+}
+
+// Now your other imports...
 import { app, BrowserWindow, ipcMain, globalShortcut, screen, desktopCapturer } from 'electron'
 import { join } from 'path'
 // Add back full service imports at the top
@@ -9,9 +28,6 @@ import { VectorService } from '../src/services/vector/VectorService'
 import { OrganizationService } from '../src/services/organization/OrganizationService'
 import { CalendarService } from '../src/services/calendar/CalendarService'
 import { MapsService } from '../src/services/maps/MapsService'
-import dotenv from 'dotenv'
-
-dotenv.config()
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -1285,6 +1301,20 @@ ipcMain.handle('maps-get-travel-time', async (event, origin: any, destination: a
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to get travel time' 
+    }
+  }
+})
+
+// Debug API key handler
+ipcMain.handle('debug-api-key', async () => {
+  return {
+    mainProcess: {
+      googleMapsKey: !!process.env.GOOGLE_MAPS_API_KEY,
+      viteKey: !!process.env.VITE_GOOGLE_MAPS_API_KEY,
+      googlePreview: process.env.GOOGLE_MAPS_API_KEY?.substring(0, 12) + '...',
+      vitePreview: process.env.VITE_GOOGLE_MAPS_API_KEY?.substring(0, 12) + '...',
+      nodeEnv: process.env.NODE_ENV,
+      allEnvKeys: Object.keys(process.env).filter(key => key.includes('GOOGLE') || key.includes('API'))
     }
   }
 })

@@ -2,7 +2,25 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { initializeOpenAI, getOpenAI, type ChatMessage } from './api/openai'
 import type { User, GoogleConnection, SyncProgress, CleanupCandidate, DriveFile, OrganizationCluster, CalendarEvent, Place } from '../electron/preload'
 import { AuthButton } from './components/AuthButton'
-import { MapVisualization, PlacesList } from './components/MapVisualization'
+import { MapVisualization } from './components/MapVisualization'
+import { PlacesList } from './components/PlacesList'
+
+// Debug component for API key troubleshooting
+const DebugAPIKey = () => {
+  const frontendKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  
+  return (
+    <div className="fixed top-0 right-0 bg-black/90 text-white p-3 text-xs z-50 max-w-xs">
+      <div className="font-bold mb-2">🔍 API Key Debug</div>
+      <div>Frontend Key: {frontendKey ? '✅ Found' : '❌ Missing'}</div>
+      {frontendKey && (
+        <div>Preview: {frontendKey.substring(0, 12)}...</div>
+      )}
+      <div>Env Mode: {import.meta.env.MODE}</div>
+      <div>Base URL: {import.meta.env.BASE_URL}</div>
+    </div>
+  )
+}
 
 // Extend CSS properties to include webkit-specific properties
 declare module 'react' {
@@ -173,6 +191,23 @@ function App() {
       })
     }
   }, [currentMode])
+
+  // Debug API key function
+  const testAPIKey = async () => {
+    if (window.electronAPI) {
+      try {
+        const result = await window.electronAPI.debug.apiKey()
+        console.log('🔍 Main Process Debug:', result)
+      } catch (error) {
+        console.error('Debug failed:', error)
+      }
+    }
+  }
+
+  // Test API key on component mount
+  useEffect(() => {
+    testAPIKey()
+  }, [])
 
   // Update dimensions when content changes
   const updateDimensions = useCallback(() => {
@@ -1494,7 +1529,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
             <div className="px-4 pb-4">
               <PlacesList
                 places={places}
-                onPlaceSelect={(place) => {
+                onPlaceSelect={(place: Place) => {
                   setSelectedPlace(place)
                   // Optionally switch to chat mode to ask about this place
                   console.log('Selected place:', place.name)
@@ -1619,6 +1654,9 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         transformOrigin: 'center center'
       }}
     >
+      {/* Debug API Key Component */}
+      <DebugAPIKey />
+
       {/* Header */}
       <div 
         className={`px-4 py-3 bg-black/95 backdrop-blur-lg cursor-grab ${isDragging ? 'cursor-grabbing' : ''}`}
@@ -1805,7 +1843,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
               />
               <PlacesList
                 places={places}
-                onPlaceSelect={(place) => {
+                onPlaceSelect={(place: Place) => {
                   setSelectedPlace(place)
                   // Optionally, you could set inputValue and switch to chat for more info
                 }}

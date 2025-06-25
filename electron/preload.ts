@@ -85,6 +85,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getTravelTime: (origin: any, destination: any, mode?: 'driving' | 'walking' | 'transit') => 
       ipcRenderer.invoke('maps-get-travel-time', origin, destination, mode),
   },
+
+  // Debug operations
+  debug: {
+    apiKey: () => Promise<{
+      mainProcess: {
+        googleMapsKey: boolean
+        viteKey: boolean
+        googlePreview?: string
+        vitePreview?: string
+        nodeEnv?: string
+        allEnvKeys: string[]
+      }
+    }>
+  },
 })
 
 // Type definitions
@@ -297,6 +311,20 @@ export interface ElectronAPI {
     getLocation: () => Promise<{ success: boolean; location?: { lat: number; lng: number }; error?: string }>
     getPlaceDetails: (placeId: string) => Promise<{ success: boolean; place?: Place; error?: string }>
     getTravelTime: (origin: any, destination: any, mode?: 'driving' | 'walking' | 'transit') => Promise<{ success: boolean; travelInfo?: { distance: string; duration: string }; error?: string }>
+  }
+
+  // Debug operations
+  debug: {
+    apiKey: () => Promise<{
+      mainProcess: {
+        googleMapsKey: boolean
+        viteKey: boolean
+        googlePreview?: string
+        vitePreview?: string
+        nodeEnv?: string
+        allEnvKeys: string[]
+      }
+    }>
   }
 }
 
