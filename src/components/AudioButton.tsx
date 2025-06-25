@@ -43,7 +43,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
 
       recorder.onstop = async () => {
         try {
-          setStatus('Transcribing audio...')
+          setStatus('')
           setIsProcessing(true)
           
           const audioBlob = new Blob(chunks, { type: 'audio/webm' })
@@ -60,7 +60,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
               )
               
               if (result && 'text' in result) {
-                setStatus('Transcription complete!')
+                setStatus('')
                 onAudioProcessed?.(result.text)
                 console.log('✅ Audio transcribed successfully:', result.text)
               } else if (result && 'success' in result && !result.success) {
@@ -98,7 +98,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
 
       setMediaRecorder(recorder)
       recorder.start(1000) // Get data every second
-      setStatus('Recording...')
+      setStatus('')
       
     } catch (error) {
       console.error('❌ Error starting recording:', error)

@@ -274,6 +274,92 @@ function App() {
     }
   }
 
+  // Create calendar event directly from chat input
+  const handleCreateEventFromChat = async (eventData: any, originalMessage: string) => {
+    if (!window.electronAPI?.calendar || !user || !googleConnection.isConnected) {
+      return
+    }
+
+    setIsCreatingEvent(true)
+    try {
+      // Parse dates and times
+      const startDateTime = new Date(`${eventData.startDate}T${eventData.startTime}`)
+      const endDateTime = eventData.endDate && eventData.endTime 
+        ? new Date(`${eventData.endDate}T${eventData.endTime}`)
+        : new Date(startDateTime.getTime() + 60 * 60 * 1000) // Default 1 hour duration
+
+      // Parse attendees (comma-separated emails)
+      const attendees = eventData.attendees
+        .split(',')
+        .map((email: string) => email.trim())
+        .filter((email: string) => email && email.includes('@'))
+
+      const calendarEventData = {
+        summary: eventData.summary.trim(),
+        description: eventData.description.trim() || undefined,
+        start: {
+          dateTime: startDateTime.toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        end: {
+          dateTime: endDateTime.toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        location: eventData.location.trim() || undefined,
+        attendees: attendees.length > 0 ? attendees : undefined
+      }
+
+      const result = await window.electronAPI.calendar.createEvent(calendarEventData)
+      
+      if (result.success && result.event) {
+        console.log('✅ Event created successfully from chat:', result.event)
+        
+        // Show success response in chat
+        const successMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `✅ Calendar event created successfully!\n\n**${result.event.summary}**\n📅 ${formatEventTime(result.event)}${result.event.location ? `\n📍 ${result.event.location}` : ''}${result.event.htmlLink ? `\n🔗 [View in Calendar](${result.event.htmlLink})` : ''}`,
+          timestamp: new Date()
+        }
+        
+        setCurrentResponse(successMsg)
+        setStreamingText('')
+        setIsStreaming(false)
+        
+        // Refresh calendar events
+        loadCalendarEvents(selectedCalendarRange)
+      } else {
+        console.error('❌ Failed to create event from chat:', result.error)
+        
+        const errorMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `❌ Failed to create calendar event: ${result.error}`,
+          timestamp: new Date()
+        }
+        
+        setCurrentResponse(errorMsg)
+        setStreamingText('')
+        setIsStreaming(false)
+      }
+    } catch (error) {
+      console.error('❌ Error creating event from chat:', error)
+      
+      const errorMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `❌ Error creating calendar event: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date()
+      }
+      
+      setCurrentResponse(errorMsg)
+      setStreamingText('')
+      setIsStreaming(false)
+    } finally {
+      setIsCreatingEvent(false)
+    }
+  }
+
   // Listen for global screenshot capture
   useEffect(() => {
     if (window.electronAPI?.onScreenshotCaptured) {
@@ -417,10 +503,13 @@ function App() {
   }
 
   // Search Drive documents - FIXED
+  // Note: Drive search now only happens when user explicitly mentions Drive-related keywords
+  // This prevents unnecessary Drive searches for general questions
   const handleDriveSearch = async (query: string) => {
     const isCalendar = isCalendarQuery(query)
     const isLocation = isLocationQuery(query)
     const isAudio = isAudioQuery(query)
+    const isDrive = isDriveQuery(query)
 
     // Only clear map state if this is NOT a location query
     if (!isLocation) {
@@ -501,10 +590,10 @@ function App() {
         }
       }
       
-      // Continue with existing Drive and Calendar search logic...
-      // Only search Drive if it's NOT a pure location query OR if we also need calendar context
-      if (!isLocation || isCalendar) {
+      // Only search Drive if explicitly requested OR if we have calendar context and user is asking about documents
+      if (isDrive || (isCalendar && isDrive)) {
         try {
+          console.log('📄 Drive search requested, searching...')
           const driveResult = await window.electronAPI.drive.search(query, 5)
           if (driveResult.success && driveResult.results) {
             driveResults = driveResult.results
@@ -514,6 +603,8 @@ function App() {
           console.error('Drive search failed:', error)
           setSearchResults([])
         }
+      } else {
+        console.log('📄 Drive search not requested, skipping...')
       }
       
       // Build comprehensive context message for calendar + drive queries
@@ -617,6 +708,20 @@ function App() {
     return calendarKeywords.some(keyword => lowerQuery.includes(keyword))
   }
 
+  const isDriveQuery = (query: string): boolean => {
+    const driveKeywords = [
+      'drive', 'document', 'file', 'folder', 'google drive', 'my drive',
+      'search my', 'find in my', 'look in my', 'check my', 'in my drive',
+      'search drive', 'find in drive', 'look in drive', 'check drive',
+      'search documents', 'find documents', 'look for documents',
+      'search files', 'find files', 'look for files',
+      'what documents', 'what files', 'which documents', 'which files'
+    ]
+    
+    const lowerQuery = query.toLowerCase()
+    return driveKeywords.some(keyword => lowerQuery.includes(keyword))
+  }
+
   const isAudioQuery = (query: string): boolean => {
     const audioKeywords = [
       'what is this guy saying', 'what did he say', 'what did she say',
@@ -648,6 +753,113 @@ function App() {
     const isNotCalendarQuery = !lowerQuery.includes('meeting') && !lowerQuery.includes('schedule') && !lowerQuery.includes('calendar')
     
     return hasLocationKeyword && isNotDocumentQuery && isNotCalendarQuery
+  }
+
+  // Check if user wants to create a calendar event
+  const isCalendarCreationQuery = (query: string): boolean => {
+    const creationKeywords = [
+      'schedule', 'book', 'create', 'add', 'set up', 'arrange', 'plan',
+      'meeting', 'appointment', 'event', 'call', 'call with', 'meet with',
+      'calendar event', 'calendar meeting', 'schedule meeting', 'book meeting',
+      'set up meeting', 'arrange meeting', 'plan meeting', 'create event',
+      'add event', 'schedule call', 'book call', 'set up call'
+    ]
+    
+    const lowerQuery = query.toLowerCase()
+    return creationKeywords.some(keyword => lowerQuery.includes(keyword))
+  }
+
+  // Parse calendar creation request to pre-fill form fields
+  const parseCalendarCreationRequest = (query: string): Partial<typeof newEvent> => {
+    const lowerQuery = query.toLowerCase()
+    const prefill: Partial<typeof newEvent> = {}
+    
+    // Extract title/summary
+    const titlePatterns = [
+      // "schedule a meeting with John" -> "meeting with John"
+      /(?:schedule|book|create|add|set up|arrange|plan)\s+(?:a\s+)?(meeting|appointment|event|call)\s+(?:with\s+)?(.+?)(?:\s+(?:at|on|for|tomorrow|today|next|this|in|\d{1,2}:\d{2})|$)/i,
+      // "meeting with John" -> "meeting with John"
+      /(meeting|appointment|event|call)\s+(?:with\s+)?(.+?)(?:\s+(?:at|on|for|tomorrow|today|next|this|in|\d{1,2}:\d{2})|$)/i,
+      // "call with team" -> "call with team"
+      /(?:with\s+)?(.+?)(?:\s+(?:meeting|appointment|event|call))(?:\s+(?:at|on|for|tomorrow|today|next|this|in|\d{1,2}:\d{2})|$)/i,
+      // Fallback: just get the main content after action words
+      /(?:schedule|book|create|add|set up|arrange|plan)\s+(?:a\s+)?(.+?)(?:\s+(?:at|on|for|tomorrow|today|next|this|in|\d{1,2}:\d{2})|$)/i
+    ]
+    
+    for (const pattern of titlePatterns) {
+      const match = query.match(pattern)
+      if (match && match[1]) {
+        // If we have both type and description, combine them
+        if (match[2]) {
+          prefill.summary = `${match[1]} ${match[2]}`.trim()
+        } else {
+          prefill.summary = match[1].trim()
+        }
+        break
+      }
+    }
+    
+    // If no title was extracted, try to get something meaningful
+    if (!prefill.summary) {
+      // Look for common meeting patterns
+      const meetingMatch = query.match(/(?:meeting|appointment|event|call)\s+(?:with\s+)?(.+?)(?:\s|$)/i)
+      if (meetingMatch) {
+        prefill.summary = `meeting with ${meetingMatch[1].trim()}`
+      } else {
+        // Fallback to a generic title
+        prefill.summary = 'New Event'
+      }
+    }
+    
+    // Extract time references
+    if (lowerQuery.includes('tomorrow')) {
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      prefill.startDate = tomorrow.toISOString().split('T')[0]
+    } else if (lowerQuery.includes('today')) {
+      const today = new Date()
+      prefill.startDate = today.toISOString().split('T')[0]
+    }
+    
+    // Extract time
+    const timeMatch = query.match(/(\d{1,2}):?(\d{2})?\s*(am|pm|AM|PM)?/)
+    if (timeMatch) {
+      let hours = parseInt(timeMatch[1])
+      const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0
+      const period = timeMatch[3]?.toLowerCase()
+      
+      if (period === 'pm' && hours !== 12) hours += 12
+      if (period === 'am' && hours === 12) hours = 0
+      
+      prefill.startTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+    }
+    
+    // Extract duration
+    const durationMatch = query.match(/(\d+)\s*(hour|hr|minute|min)s?/)
+    if (durationMatch) {
+      const duration = parseInt(durationMatch[1])
+      const unit = durationMatch[2].toLowerCase()
+      
+      if (prefill.startTime) {
+        const startTime = new Date(`2000-01-01T${prefill.startTime}`)
+        const endTime = new Date(startTime.getTime() + (unit.startsWith('hour') ? duration * 60 : duration) * 60 * 1000)
+        prefill.endTime = endTime.toTimeString().slice(0, 5)
+      }
+    }
+    
+    // Extract location
+    const locationMatch = query.match(/(?:at|in|location:?)\s+(.+?)(?:\s+(?:at|on|for|tomorrow|today|next|this|in|\d{1,2}:\d{2})|$)/i)
+    if (locationMatch) {
+      prefill.location = locationMatch[1].trim()
+    }
+    
+    // Extract attendees (emails)
+    const emailMatches = query.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g)
+    if (emailMatches) {
+      prefill.attendees = emailMatches.join(', ')
+    }
+    
+    return prefill
   }
 
   const getCalendarContextForAI = async (query: string): Promise<string> => {
@@ -769,12 +981,12 @@ function App() {
   // Add smart suggestions based on calendar context
   const getSmartSuggestions = (): string[] => {
     const suggestions = [
-      "What's on my calendar today?",
-      "Show me my upcoming meetings",
+      "Answer this Leetcode Question",
+      "Explain Quantum Computing",
       "Find free time in my schedule",
-      "What documents do I have about...",
-      "Search my drive for...",
-      "Organize my files",
+      "Search my drive for project documents",
+      "Find documents about budget planning",
+      "Look for files related to marketing",
       "Find nearby restaurants",
       "How long to get to...",
     ]
@@ -782,9 +994,14 @@ function App() {
     // Add calendar-specific suggestions if connected
     if (googleConnection.isConnected) {
       suggestions.push(
-        "Schedule a meeting",
-        "Find conflicts in my calendar",
-        "What's my availability this week?"
+        "Schedule a meeting with John tomorrow at 2pm",
+        "Book a 1-hour call with the team",
+        "Create an event for project review",
+        "Set up a meeting at the office",
+        "What's my availability this week?",
+        "Search my drive for meeting notes",
+        "Find documents about quarterly reports",
+        "Look for files related to client proposals"
       )
     }
     
@@ -1034,6 +1251,34 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     
     const message = inputValue.trim()
     setInputValue('')
+    
+    // Check if this is a calendar creation request
+    const isCalendarCreationRequest = isCalendarCreationQuery(message)
+    
+    if (isCalendarCreationRequest && user && googleConnection.isConnected) {
+      // Parse the request and create the event directly
+      const prefillData = parseCalendarCreationRequest(message)
+      
+      // Set default date and time if not provided
+      const now = new Date()
+      const defaultDate = now.toISOString().split('T')[0]
+      const defaultTime = `${(now.getHours() + 1).toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+      
+      const eventData = {
+        summary: prefillData.summary || 'New Event',
+        description: prefillData.description || '',
+        startDate: prefillData.startDate || defaultDate,
+        startTime: prefillData.startTime || defaultTime,
+        endDate: prefillData.endDate || '',
+        endTime: prefillData.endTime || '',
+        location: prefillData.location || '',
+        attendees: prefillData.attendees || ''
+      }
+      
+      // Create the event automatically
+      await handleCreateEventFromChat(eventData, message)
+      return
+    }
     
     // Check if this is a "notes" request with a pending capture
     const isNotesRequest = message.toLowerCase().includes('notes') || message.toLowerCase().includes('save this')
@@ -2146,24 +2391,6 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         {/* Chat Input */}
         {currentMode === 'chat' && (
           <div className="relative" style={{ WebkitAppRegion: 'no-drag' }}>
-            {/* Pending Capture Indicator */}
-            {pendingCapture && (
-              <div className="absolute -top-8 left-0 right-0 flex items-center justify-center">
-                <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-lg px-3 py-1 text-xs text-yellow-300 flex items-center gap-2">
-                  <span>
-                    {pendingCapture.type === 'screenshot' ? '📸 Screenshot captured' : '🎤 Audio transcribed'} - 
-                    Ask a question or type "notes" to save
-                  </span>
-                  <button
-                    onClick={() => setPendingCapture(null)}
-                    className="text-yellow-400 hover:text-yellow-200 transition-colors"
-                    title="Clear capture"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            )}
             
             <input
               ref={inputRef}
@@ -2174,9 +2401,9 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
               placeholder={
                 pendingCapture 
                   ? (pendingCapture.type === 'screenshot' 
-                      ? "Ask about the screenshot or type 'notes' to save..." 
-                      : "Ask about the audio or type 'notes' to save...")
-                  : (googleConnection.isConnected ? "Ask about your Drive, calendar, or anything..." : "Type a message...")
+                      ? "Ask about the screen" 
+                      : "Ask about the audio")
+                  : (googleConnection.isConnected ? "I'm your AI Wingman, request anything" : "Type a message...")
               }
               className="w-full bg-blue-500/10 border border-blue-400/20 rounded-lg px-4 py-3 pr-32 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-colors text-sm"
               disabled={isLoading || isStreaming}
@@ -2223,7 +2450,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
                       <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
                     </div>
                     <span className="text-blue-300 text-sm font-medium">
-                      {googleConnection.isConnected ? 'Searching Drive & Calendar & analyzing...' : 'Analyzing...'}
+                      {googleConnection.isConnected ? 'Generating Response...' : 'Analyzing...'}
                     </span>
                   </div>
                 )}
@@ -2294,7 +2521,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
             </h2>
             <p className="text-white/50 text-sm mb-4">
               {googleConnection.isConnected 
-                ? 'I can search your Drive, check your calendar, and help with scheduling and productivity'
+                ? "I'm here to help you stay organized and get things done. Just let me know what you need."
                 : 'Type above, press ⌘⇧S to capture screen, or sign in for Drive & Calendar access'
               }
             </p>

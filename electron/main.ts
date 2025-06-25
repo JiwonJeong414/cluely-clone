@@ -236,15 +236,35 @@ function hideWindow() {
 
 function centerWindow() {
   if (mainWindow) {
+    // Ensure window is visible first
+    if (!mainWindow.isVisible()) {
+      mainWindow.show()
+    }
+    
     const primaryDisplay = screen.getPrimaryDisplay()
-    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
+    const { x: workAreaX, y: workAreaY, width: workAreaWidth, height: workAreaHeight } = primaryDisplay.workArea
     const bounds = mainWindow.getBounds()
     
-    const newX = Math.floor(screenWidth / 2 - bounds.width / 2)
-    const newY = Math.floor(screenHeight / 3)
+    const newX = Math.floor(workAreaX + workAreaWidth / 2 - bounds.width / 2)
+    const newY = workAreaY + 20 // 20px below the top of the usable area
+    
+    console.log('Centering window (workArea):', {
+      workAreaX,
+      workAreaY,
+      workAreaWidth,
+      workAreaHeight,
+      currentBounds: bounds,
+      newX,
+      newY
+    })
     
     mainWindow.setPosition(newX, newY, true)
-    console.log('Window centered')
+    mainWindow.focus()
+    
+    setTimeout(() => {
+      const newBounds = mainWindow?.getBounds()
+      console.log('Window centered at top (workArea), new bounds:', newBounds)
+    }, 100)
   }
 }
 
