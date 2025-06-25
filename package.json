@@ -1,7 +1,7 @@
 {
   "name": "cluely-clone",
   "version": "1.0.0",
-  "main": "dist-electron/electron/main.js",  
+  "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite --host localhost --port 5173",
@@ -30,6 +30,7 @@
     "electron": "^36.5.0",
     "electron-builder": "^25.1.8",
     "postcss": "^8.5.6",
+    "prisma": "^6.10.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
@@ -38,10 +39,13 @@
   "dependencies": {
     "@prisma/client": "^6.10.1",
     "@radix-ui/react-toast": "^1.2.14",
+    "@types/node-fetch": "^2.6.12",
+    "crypto": "^1.0.1",
     "dotenv": "^16.5.0",
     "googleapis": "^150.0.1",
+    "http": "^0.0.1-security",
     "lucide-react": "^0.522.0",
-    "prisma": "^6.10.1",
+    "node-fetch": "^2.7.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

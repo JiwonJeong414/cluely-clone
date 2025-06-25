@@ -73,7 +73,7 @@ function App() {
   // Listen for global screenshot capture
   useEffect(() => {
     if (window.electronAPI?.onScreenshotCaptured) {
-      console.log('🎯 Setting up screenshot listener') // Add this debug line
+      console.log('Setting up screenshot listener') // Add this debug line
       window.electronAPI.onScreenshotCaptured((screenshot: string) => {
         console.log('📸 Screenshot received in React!', screenshot.substring(0, 50) + '...') // Add this debug line
         sendMessage("What do you see on my screen?", screenshot)
@@ -364,10 +364,34 @@ function App() {
 
   // Listen for Drive mode toggle
   useEffect(() => {
+    console.log('Setting up Drive mode toggle listener...')
+    console.log('window.electronAPI?.onToggleDriveMode exists:', !!window.electronAPI?.onToggleDriveMode)
+    
     if (window.electronAPI?.onToggleDriveMode) {
-      window.electronAPI.onToggleDriveMode(() => {
-        setCurrentMode(prev => prev === 'drive' ? 'chat' : 'drive')
-      })
+      const handleToggleDriveMode = () => {
+        console.log('🎯 Drive mode toggle received from main process')
+        // Show window if it's hidden
+        if (window.electronAPI?.showWindow) {
+          window.electronAPI.showWindow()
+        }
+        console.log('Current mode before toggle:', currentMode)
+        setCurrentMode(prev => {
+          const newMode = prev === 'drive' ? 'chat' : 'drive'
+          console.log('Switching from', prev, 'to', newMode)
+          return newMode
+        })
+      }
+      
+      window.electronAPI.onToggleDriveMode(handleToggleDriveMode)
+      console.log('✅ Drive mode toggle listener set up successfully')
+      
+      // Return cleanup function
+      return () => {
+        console.log('Cleaning up Drive mode toggle listener')
+        // Note: We can't actually remove the listener with the current API, but this is good practice
+      }
+    } else {
+      console.log('❌ window.electronAPI?.onToggleDriveMode not available')
     }
 
     if (window.electronAPI?.onDriveSyncProgress) {
@@ -375,15 +399,23 @@ function App() {
         setSyncProgress(progress)
       })
     }
-  }, [])
+  }, []) // Remove currentMode from dependencies
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+Shift+D for Drive mode
+      // Cmd+Shift+D for Drive mode (show window and switch to drive mode)
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
+        console.log('Cmd+Shift+D pressed in React component')
         e.preventDefault()
+        
+        // Always allow switching to drive mode, but show sign-in prompt if not authenticated
         setCurrentMode(prev => prev === 'drive' ? 'chat' : 'drive')
+        
+        // Show window if it's hidden
+        if (window.electronAPI?.showWindow) {
+          window.electronAPI.showWindow()
+        }
       }
       
       // Cmd+Enter to toggle between modes

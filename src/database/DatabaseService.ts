@@ -307,7 +307,7 @@ export class DatabaseService {
     const untitledFiles = await this.prisma.document.findMany({
       where: {
         userId,
-        name: { contains: 'Untitled', mode: 'insensitive' }
+        name: { contains: 'Untitled' }  // Removed mode: 'insensitive'
       },
       take: 15
     })
@@ -317,9 +317,9 @@ export class DatabaseService {
       where: {
         userId,
         OR: [
-          { name: { contains: 'test', mode: 'insensitive' } },
-          { name: { contains: 'temp', mode: 'insensitive' } },
-          { name: { contains: 'draft', mode: 'insensitive' } },
+          { name: { contains: 'test' } },      // Removed mode: 'insensitive'
+          { name: { contains: 'temp' } },     // Removed mode: 'insensitive'
+          { name: { contains: 'draft' } },    // Removed mode: 'insensitive'
           { name: { startsWith: 'Copy of' } }
         ]
       },

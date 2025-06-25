@@ -1,28 +1,53 @@
 // electron/main.ts - Simplified version without service imports
 import { app, BrowserWindow, ipcMain, globalShortcut, screen, desktopCapturer } from 'electron'
 import { join } from 'path'
-// Remove service imports temporarily
-// import dotenv from 'dotenv'
+// Add back basic imports
+import dotenv from 'dotenv'
 
-// dotenv.config()
+dotenv.config()
 
 const isDev = process.env.NODE_ENV === 'development'
 
 let mainWindow: BrowserWindow | null = null
 let isWindowVisible = false
 
-// Temporarily disable services
-// let authService: any
-// let driveService: any
-// let dbService: any
+// Add back database and auth services
+let dbService: any
+let authService: any
 
 async function initializeServices() {
   try {
-    console.log('Initializing basic services...')
-    // Temporarily disabled - services will be added back later
-    console.log('✅ Basic services initialized successfully')
+    console.log('Initializing services...')
+    
+    // Initialize database service first
+    if (isDev) {
+      const { DatabaseService } = require('../src/database/DatabaseService')
+      const { AuthService } = require('../src/services/auth/AuthService')
+      
+      dbService = DatabaseService.getInstance()
+      await dbService.initialize()
+      console.log('✅ Database service initialized')
+      
+      authService = AuthService.getInstance()
+      await authService.loadUserFromStorage()
+      console.log('✅ Auth service initialized')
+    } else {
+      const { DatabaseService } = require('./database/DatabaseService.js')
+      const { AuthService } = require('./services/auth/AuthService.js')
+      
+      dbService = DatabaseService.getInstance()
+      await dbService.initialize()
+      console.log('✅ Database service initialized')
+      
+      authService = AuthService.getInstance()
+      await authService.loadUserFromStorage()
+      console.log('✅ Auth service initialized')
+    }
+    
+    console.log('✅ Services initialized successfully')
   } catch (error) {
     console.error('❌ Failed to initialize services:', error)
+    console.log('📝 Running in basic mode without advanced features')
   }
 }
 
@@ -70,7 +95,7 @@ function createWindow() {
       }
     })
   } else {
-    mainWindow.loadFile(join(__dirname, '../../dist/index.html'))
+    mainWindow.loadFile(join(__dirname, '../dist/index.html'))
   }
 
   isWindowVisible = isDev
@@ -126,30 +151,34 @@ function registerGlobalShortcuts() {
   const testShortcut = 'Cmd+Shift+T'
   const toggleShortcut = process.platform === 'darwin' ? 'Cmd+Space' : 'Ctrl+Space'
   const centerShortcut = 'Cmd+Shift+C'
-  const screenshotShortcut = 'Cmd+Shift+S' // Changed from 'Cmd+Shift+S'
+  const screenshotShortcut = 'Cmd+Shift+S'
+  const driveModeShortcut = 'Cmd+Shift+D'
   
   try {
-    globalShortcut.register(testShortcut, () => {
-      console.log('Test shortcut working')
+    console.log('Attempting to register global shortcuts...')
+    
+    const testRegistered = globalShortcut.register(testShortcut, () => {
+      console.log('✅ Test shortcut working')
       if (mainWindow) {
         mainWindow.webContents.send('shortcut-test-success')
       }
     })
+    console.log('Test shortcut registration:', testRegistered ? 'SUCCESS' : 'FAILED')
 
-    globalShortcut.register(toggleShortcut, () => {
+    const toggleRegistered = globalShortcut.register(toggleShortcut, () => {
+      console.log('Toggle shortcut triggered')
       toggleWindow()
     })
+    console.log('Toggle shortcut registration:', toggleRegistered ? 'SUCCESS' : 'FAILED')
 
-    globalShortcut.register('Cmd+Shift+A', () => {
-      toggleWindow()
-    })
-
-    globalShortcut.register(centerShortcut, () => {
+    const centerRegistered = globalShortcut.register(centerShortcut, () => {
+      console.log('Center shortcut triggered')
       centerWindow()
     })
+    console.log('Center shortcut registration:', centerRegistered ? 'SUCCESS' : 'FAILED')
 
-    globalShortcut.register(screenshotShortcut, async () => {
-      console.log('Screenshot shortcut triggered!') // Add debug log
+    const screenshotRegistered = globalShortcut.register(screenshotShortcut, async () => {
+      console.log('Screenshot shortcut triggered')
       if (mainWindow) {
         try {
           const screenshot = await captureScreen()
@@ -159,11 +188,29 @@ function registerGlobalShortcuts() {
         }
       }
     })
+    console.log('Screenshot shortcut registration:', screenshotRegistered ? 'SUCCESS' : 'FAILED')
+
+    // Try to register the primary drive mode shortcut
+    const driveModeRegistered = globalShortcut.register(driveModeShortcut, async () => {
+      console.log('🚀 Drive mode shortcut triggered')
+      if (mainWindow) {
+        // Always send the toggle event, let the renderer handle authentication
+        console.log('📤 Sending toggle-drive-mode event to renderer')
+        mainWindow.webContents.send('toggle-drive-mode')
+        
+        // Show window and focus it
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    })
+    console.log('Drive mode shortcut registration:', driveModeRegistered ? 'SUCCESS' : 'FAILED')
 
     console.log('Global shortcuts registered successfully')
     console.log('- Cmd+Space: Toggle window')
     console.log('- Cmd+Shift+C: Center window')
-    console.log('- Cmd+Shift+S: Quick screenshot analysis') 
+    console.log('- Cmd+Shift+S: Quick screenshot analysis')
+    console.log('- Cmd+Shift+D: Toggle drive mode')
+    console.log('- Cmd+Shift+T: Test shortcut')
   } catch (error) {
     console.error('Error registering shortcuts:', error)
   }
@@ -339,25 +386,59 @@ ipcMain.on('shortcut-test-success', () => {
   console.log('Shortcut test success received')
 })
 
-// Stub Drive IPC handlers that return "not implemented" messages
+// Authentication handlers - now functional
 ipcMain.handle('auth-get-user', async () => {
-  console.log('auth-get-user called - Drive features disabled')
-  return null
+  try {
+    if (!authService) {
+      console.log('Auth service not available')
+      return null
+    }
+    return authService.getCurrentUser()
+  } catch (error) {
+    console.error('Error getting user:', error)
+    return null
+  }
 })
 
 ipcMain.handle('auth-sign-in', async () => {
-  console.log('auth-sign-in called - Drive features disabled')
-  return { success: false, error: 'Drive features are temporarily disabled. Screenshot functionality is available.' }
+  try {
+    if (!authService) {
+      return { success: false, error: 'Auth service not available' }
+    }
+    
+    const user = await authService.signInWithGoogle()
+    return { success: true, user }
+  } catch (error) {
+    console.error('Error signing in:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Sign in failed' }
+  }
 })
 
 ipcMain.handle('auth-sign-out', async () => {
-  console.log('auth-sign-out called - Drive features disabled')
-  return { success: false, error: 'Drive features are temporarily disabled.' }
+  try {
+    if (!authService) {
+      return { success: false, error: 'Auth service not available' }
+    }
+    
+    await authService.signOut()
+    return { success: true }
+  } catch (error) {
+    console.error('Error signing out:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Sign out failed' }
+  }
 })
 
 ipcMain.handle('auth-get-drive-connection', async () => {
-  console.log('auth-get-drive-connection called - Drive features disabled')
-  return { isConnected: false }
+  try {
+    if (!authService) {
+      return { isConnected: false }
+    }
+    
+    return authService.getDriveConnection()
+  } catch (error) {
+    console.error('Error getting drive connection:', error)
+    return { isConnected: false }
+  }
 })
 
 ipcMain.handle('drive-sync', async () => {
