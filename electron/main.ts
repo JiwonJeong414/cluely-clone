@@ -239,6 +239,7 @@ function centerWindow() {
     // Ensure window is visible first
     if (!mainWindow.isVisible()) {
       mainWindow.show()
+      
     }
     
     const primaryDisplay = screen.getPrimaryDisplay()
