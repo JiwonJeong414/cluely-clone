@@ -1,4 +1,4 @@
-![cluely_logo](https://github.com/user-attachments/assets/bfc8f357-6c59-45c3-9ee1-15ef8f93b1ff)
+![Cluely_Announcement_Twitter-R1](https://github.com/user-attachments/assets/51a28506-5947-448c-8dd7-f229315008c6)
 
 # Wingman
 
