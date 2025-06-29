@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
-import type { User, GoogleConnection } from '../../electron/preload'
+import type { User, GoogleConnection } from '../types/app'
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
   const [googleConnection, setGoogleConnection] = useState<GoogleConnection>({ isConnected: false })
   const [isAuthenticating, setIsAuthenticating] = useState(false)
 
-  // Load user data on startup
+  // Loads user data and Google connection status on startup
   useEffect(() => {
     const loadUserData = async () => {
       if (window.electronAPI?.auth) {
@@ -27,6 +27,7 @@ export function useAuth() {
     loadUserData()
   }, [])
 
+  // Handles user sign in process
   const handleSignIn = async () => {
     if (!window.electronAPI?.auth) return
     
@@ -48,6 +49,7 @@ export function useAuth() {
     }
   }
 
+  // Handles user sign out process
   const handleSignOut = async () => {
     if (!window.electronAPI?.auth) return
     

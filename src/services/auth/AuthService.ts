@@ -2,7 +2,7 @@
 import { shell } from 'electron'
 import { google } from 'googleapis'
 import * as crypto from 'crypto'
-import { DatabaseService } from '../../database/DatabaseService'
+import { DatabaseService } from '../database/DatabaseService'
 
 export interface User {
   id: string

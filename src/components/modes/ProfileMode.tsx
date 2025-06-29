@@ -30,7 +30,7 @@ export const ProfileMode: React.FC<ProfileModeProps> = ({
   }
 
   return (
-    <div className="p-4 max-h-96 overflow-y-auto custom-scrollbar" style={{ WebkitAppRegion: 'no-drag' }}>
+    <div className="p-4 pb-20 max-h-96 overflow-y-auto custom-scrollbar" style={{ WebkitAppRegion: 'no-drag' }}>
       <div className="space-y-4">
         {/* User Info Section */}
         <div className="space-y-3">
@@ -162,25 +162,6 @@ export const ProfileMode: React.FC<ProfileModeProps> = ({
             className="w-full px-4 py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded-lg text-white text-sm transition-colors font-medium"
           >
             Sign Out
-          </button>
-        </div>
-
-        {/* Location Test */}
-        <div className="pt-3 border-t border-green-500/10">
-          <button
-            onClick={async () => {
-              const location = await requestLocationPermission()
-              if (location) {
-                console.log('✅ Location test successful:', location)
-                alert(`Location: ${location.lat}, ${location.lng}`)
-              } else {
-                console.log('❌ Location test failed')
-                alert('Location test failed')
-              }
-            }}
-            className="w-full px-4 py-3 bg-green-500/20 hover:bg-green-500/30 border border-green-400/30 rounded-lg text-white text-sm transition-colors font-medium"
-          >
-            🌍 Test Location
           </button>
         </div>
       </div>

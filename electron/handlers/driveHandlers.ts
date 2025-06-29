@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { DriveService } from '../../src/services/drive/DriveService'
-import { DatabaseService } from '../../src/database/DatabaseService'
+import { DatabaseService } from '../../src/services/database/DatabaseService'
 import { AuthService } from '../../src/services/auth/AuthService'
 
 export function setupDriveHandlers(

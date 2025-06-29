@@ -1,5 +1,5 @@
 // src/services/vector/VectorService.ts
-import { DatabaseService } from '../../database/DatabaseService'
+import { DatabaseService } from '../database/DatabaseService'
 
 export interface SearchResult {
   fileId: string

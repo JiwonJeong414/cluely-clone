@@ -1,4 +1,3 @@
-// src/components/PlacesList.tsx - Compact list view companion
 import React from 'react'
 import type { Place } from '../services/maps/MapsService'
 import type { PlacesListProps } from '../types/components'

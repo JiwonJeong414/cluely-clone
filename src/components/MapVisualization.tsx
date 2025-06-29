@@ -26,7 +26,7 @@ export const MapVisualization: React.FC<MapVisualizationProps> = ({
     return (
       <div className={`bg-red-500/10 border border-red-400/20 rounded-lg p-4 ${className}`}>
         <div className="text-red-300 text-sm mb-2">
-          ❌ Google Maps API key not configured
+          Google Maps API key not configured
         </div>
         <div className="text-red-200 text-xs">
           Add VITE_GOOGLE_MAPS_API_KEY to your .env file
@@ -136,18 +136,18 @@ export const MapVisualization: React.FC<MapVisualizationProps> = ({
         <APIProvider 
           apiKey={apiKey}
           onLoad={() => {
-            console.log('🗺️ Maps API loaded successfully')
+            console.log('[✓] Maps API loaded successfully')
             setMapError(null)
           }}
           onError={(error) => {
-            console.error('❌ Maps API error:', error)
+            console.error('Maps API error:', error)
             setMapError(error instanceof Error ? error.message : 'Failed to load Google Maps')
           }}
         >
           {mapError ? (
             <div className="h-full flex items-center justify-center bg-red-500/10">
               <div className="text-center">
-                <div className="text-red-300 text-sm mb-2">❌ Map Error</div>
+                <div className="text-red-300 text-sm mb-2">Map Error</div>
                 <div className="text-red-200 text-xs">{mapError}</div>
               </div>
             </div>

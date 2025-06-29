@@ -2,7 +2,7 @@
 import { google } from 'googleapis'
 import { AuthService } from '../auth/AuthService.js'
 import type { User } from '../auth/AuthService.js'
-import { DatabaseService } from '../../database/DatabaseService'
+import { DatabaseService } from '../database/DatabaseService'
 
 export interface DriveFile {
   id: string

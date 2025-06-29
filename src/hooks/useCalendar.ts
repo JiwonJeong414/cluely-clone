@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { User, GoogleConnection, CalendarEvent } from '../../electron/preload'
-import type { CalendarRange } from '../types/app'
+import type { User, GoogleConnection, CalendarEvent, CalendarRange, NewEvent } from '../types/app'
 
 export function useCalendar(user: User | null, googleConnection: GoogleConnection) {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
@@ -8,7 +7,7 @@ export function useCalendar(user: User | null, googleConnection: GoogleConnectio
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(false)
   const [showCreateEventForm, setShowCreateEventForm] = useState(false)
   const [isCreatingEvent, setIsCreatingEvent] = useState(false)
-  const [newEvent, setNewEvent] = useState({
+  const [newEvent, setNewEvent] = useState<NewEvent>({
     summary: '',
     description: '',
     startDate: '',
@@ -19,6 +18,7 @@ export function useCalendar(user: User | null, googleConnection: GoogleConnectio
     attendees: ''
   })
 
+  // Loads calendar events for the specified time range
   const loadCalendarEvents = async (range: CalendarRange) => {
     if (!window.electronAPI?.calendar || !user || !googleConnection.isConnected || isLoadingCalendar) {
       return
@@ -56,11 +56,13 @@ export function useCalendar(user: User | null, googleConnection: GoogleConnectio
     }
   }
 
+  // Handles calendar range change and loads corresponding events
   const handleCalendarRangeChange = (range: CalendarRange) => {
     setSelectedCalendarRange(range)
     loadCalendarEvents(range)
   }
 
+  // Creates a new calendar event
   const handleCreateEvent = async () => {
     if (!window.electronAPI?.calendar || !user || !googleConnection.isConnected) {
       return
@@ -124,12 +126,13 @@ export function useCalendar(user: User | null, googleConnection: GoogleConnectio
     }
   }
 
+  // Creates calendar events from chat messages (placeholder for future implementation)
   const handleCreateEventFromChat = async (eventData: any, originalMessage: string) => {
     // Implementation for creating events from chat
     console.log('Creating event from chat:', eventData, originalMessage)
   }
 
-  // Load events when user connects
+  // Loads events when user connects to Google
   useEffect(() => {
     if (user && googleConnection.isConnected && calendarEvents.length === 0 && !isLoadingCalendar) {
       loadCalendarEvents('today')

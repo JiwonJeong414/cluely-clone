@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Place } from '../../electron/preload'
+import type { Place } from '../types/app'
 
 export function useMaps() {
   const [places, setPlaces] = useState<Place[]>([])
@@ -8,12 +8,13 @@ export function useMaps() {
   const [isSearchingMaps, setIsSearchingMaps] = useState(false)
   const [lastQueryWasLocation, setLastQueryWasLocation] = useState(false)
 
+  // Requests location permission and gets user's current location
   const requestLocationPermission = async (): Promise<{ lat: number; lng: number } | null> => {
     try {
-      console.log('🌍 Requesting location permission...')
+      console.log('Requesting location permission...')
       
       if (!navigator.geolocation) {
-        console.error('❌ Geolocation not supported')
+        console.error('Geolocation not supported')
         alert('Geolocation is not supported by this browser')
         return null
       }
@@ -21,7 +22,7 @@ export function useMaps() {
       if ('permissions' in navigator) {
         try {
           const permission = await navigator.permissions.query({ name: 'geolocation' })
-          console.log('📍 Current location permission state:', permission.state)
+          console.log('Current location permission state:', permission.state)
           
           if (permission.state === 'denied') {
             alert('Location access is blocked. Please enable it in your browser settings and refresh the page.')
@@ -40,7 +41,7 @@ export function useMaps() {
         navigator.geolocation.getCurrentPosition(
           (position) => {
             clearTimeout(timeoutId)
-            console.log('✅ Location obtained:', {
+            console.log('[✓] Location obtained:', {
               lat: position.coords.latitude,
               lng: position.coords.longitude,
               accuracy: position.coords.accuracy
@@ -52,7 +53,7 @@ export function useMaps() {
           },
           (error) => {
             clearTimeout(timeoutId)
-            console.error('❌ Location error:', error)
+            console.error('Location error:', error)
             
             let message = 'Failed to get your location: '
             switch (error.code) {
@@ -80,7 +81,7 @@ export function useMaps() {
         )
       })
     } catch (error) {
-      console.error('❌ Location permission error:', error)
+      console.error('Location permission error:', error)
       return null
     }
   }

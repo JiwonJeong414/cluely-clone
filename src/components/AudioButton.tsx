@@ -59,16 +59,16 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
               if (result && 'text' in result) {
                 setStatus('')
                 onAudioProcessed?.(result.text)
-                console.log('✅ Audio transcribed successfully:', result.text)
+                console.log('[✓] Audio transcribed successfully:', result.text)
               } else if (result && 'success' in result && !result.success) {
                 setStatus('Transcription failed')
-                console.error('❌ Audio transcription failed:', result.error)
+                console.error('Audio transcription failed:', result.error)
               } else {
                 setStatus('Transcription failed')
-                console.error('❌ Audio transcription failed:', result)
+                console.error('Audio transcription failed:', result)
               }
             } catch (error) {
-              console.error('❌ Audio transcription error:', error)
+              console.error('Audio transcription error:', error)
               setStatus('Transcription failed')
             } finally {
               setIsProcessing(false)
@@ -79,7 +79,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
           reader.readAsDataURL(audioBlob)
           
         } catch (error) {
-          console.error('❌ Error processing audio:', error)
+          console.error('Error processing audio:', error)
           setStatus('Processing failed')
           setIsProcessing(false)
           setTimeout(() => setStatus(''), 3000)
@@ -87,7 +87,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
       }
 
       recorder.onerror = (event) => {
-        console.error('❌ MediaRecorder error:', event)
+        console.error('MediaRecorder error:', event)
         setStatus('Recording error')
         setIsRecording(false)
         setTimeout(() => setStatus(''), 3000)
@@ -98,7 +98,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
       setStatus('')
       
     } catch (error) {
-      console.error('❌ Error starting recording:', error)
+      console.error('Error starting recording:', error)
       setStatus('Failed to start recording')
       setIsRecording(false)
       setTimeout(() => setStatus(''), 3000)

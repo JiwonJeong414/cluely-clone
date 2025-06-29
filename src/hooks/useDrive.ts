@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { User, GoogleConnection, SyncProgress } from '../../electron/preload'
+import type { User, GoogleConnection, SyncProgress, SyncOptions } from '../types/app'
 
 export function useDrive(user: User | null, googleConnection: GoogleConnection) {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
@@ -10,7 +10,7 @@ export function useDrive(user: User | null, googleConnection: GoogleConnection) 
   const [organizationClusters, setOrganizationClusters] = useState<any[]>([])
   const [isAnalyzing, setIsAnalyzing] = useState(false)
 
-  // Set up sync progress listener
+  // Sets up sync progress listener from main process
   useEffect(() => {
     if (window.electronAPI?.onDriveSyncProgress) {
       console.log('Setting up drive sync progress listener')
@@ -25,11 +25,8 @@ export function useDrive(user: User | null, googleConnection: GoogleConnection) 
     }
   }, [])
 
-  const handleSync = async (options: { 
-    limit?: number
-    force?: boolean
-    strategy?: 'new_files_only' | 'force_reindex'
-  } = {}) => {
+  // Syncs Google Drive files with specified options
+  const handleSync = async (options: SyncOptions = {}) => {
     if (!window.electronAPI?.drive || !user || !googleConnection.isConnected) {
       return
     }
@@ -42,24 +39,30 @@ export function useDrive(user: User | null, googleConnection: GoogleConnection) 
     try {
       const result = await window.electronAPI.drive.sync({ limit, force, strategy })
       if (result.success) {
-        console.log('✅ Sync completed:', result.result)
+        console.log('[✓] Sync completed:', result.result)
         await refreshSyncStats()
       } else {
-        console.error('❌ Sync failed:', result.error)
+        console.error('Sync failed:', result.error)
         alert(`Drive sync failed: ${result.error}`)
       }
     } catch (error) {
-      console.error('💥 Error syncing:', error)
+      console.error('Error syncing:', error)
       alert(`Drive sync error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSyncing(false)
     }
   }
 
+  // Quick sync with limited files
   const handleQuickSync = () => handleSync({ limit: 5, force: false })
+  
+  // Deep sync with more files
   const handleDeepSync = () => handleSync({ limit: 20, force: false })
+  
+  // Force sync ignoring cache
   const handleForceSync = () => handleSync({ limit: 10, force: true })
 
+  // Refreshes sync statistics
   const refreshSyncStats = async () => {
     if (!window.electronAPI?.drive || !user) return
     
@@ -73,6 +76,7 @@ export function useDrive(user: User | null, googleConnection: GoogleConnection) 
     }
   }
 
+  // Loads cleanup candidate files
   const loadCleanupCandidates = async () => {
     if (!window.electronAPI?.db || !user) return
     
@@ -86,6 +90,7 @@ export function useDrive(user: User | null, googleConnection: GoogleConnection) 
     }
   }
 
+  // Deletes multiple files from Google Drive
   const handleDeleteFiles = async (fileIds: string[]) => {
     if (!window.electronAPI?.drive || !user) return
     
@@ -102,6 +107,7 @@ export function useDrive(user: User | null, googleConnection: GoogleConnection) 
     }
   }
 
+  // Analyzes files for organization suggestions
   const analyzeForOrganization = async () => {
     if (!window.electronAPI?.drive || !user) return
     
@@ -123,7 +129,7 @@ export function useDrive(user: User | null, googleConnection: GoogleConnection) 
     }
   }
 
-  // Load sync stats when user connects
+  // Loads sync stats when user connects to Google
   useEffect(() => {
     if (user && googleConnection.isConnected) {
       refreshSyncStats()

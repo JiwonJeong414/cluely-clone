@@ -3,7 +3,7 @@ import { join } from 'path'
 import dotenv from 'dotenv'
 
 // Import services
-import { DatabaseService } from '../src/database/DatabaseService'
+import { DatabaseService } from '../src/services/database/DatabaseService'
 import { AuthService } from '../src/services/auth/AuthService'
 import { DriveService } from '../src/services/drive/DriveService'
 import { VectorService } from '../src/services/vector/VectorService'

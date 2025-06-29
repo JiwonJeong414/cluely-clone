@@ -1,15 +1,5 @@
 import { useEffect } from 'react'
-import type { AppMode, CalendarRange } from '../types/app'
-import type { User, GoogleConnection } from '../../electron/preload'
-
-interface UseKeyboardShortcutsProps {
-  currentMode: AppMode
-  setCurrentMode: (mode: AppMode | ((prev: AppMode) => AppMode)) => void
-  user: User | null
-  googleConnection: GoogleConnection
-  selectedCalendarRange: CalendarRange
-  loadCalendarEvents: (range: CalendarRange) => void
-}
+import type { UseKeyboardShortcutsProps, AppMode } from '../types/app'
 
 export function useKeyboardShortcuts({
   currentMode,
@@ -19,6 +9,8 @@ export function useKeyboardShortcuts({
   selectedCalendarRange,
   loadCalendarEvents
 }: UseKeyboardShortcutsProps) {
+    
+  // Sets up keyboard shortcuts for mode switching and navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Cmd+Shift+D for Drive mode

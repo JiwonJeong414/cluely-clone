@@ -1,7 +1,7 @@
 // src/services/calendar/CalendarService.ts
 import { google } from 'googleapis'
 import { AuthService } from '../auth/AuthService'
-import { DatabaseService } from '../../database/DatabaseService'
+import { DatabaseService } from '../database/DatabaseService'
 
 export interface CalendarEvent {
   id: string

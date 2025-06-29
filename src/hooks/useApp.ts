@@ -7,6 +7,7 @@ export function useApp(contentRef: RefObject<HTMLDivElement | null>) {
   const [currentMode, setCurrentMode] = useState<AppMode>('chat')
   const [isDragging, setIsDragging] = useState(false)
 
+  // Updates window dimensions when content size changes
   const updateDimensions = useCallback(() => {
     if (contentRef.current && window.electronAPI?.updateContentDimensions) {
       requestAnimationFrame(() => {
@@ -23,6 +24,7 @@ export function useApp(contentRef: RefObject<HTMLDivElement | null>) {
     }
   }, [contentRef])
 
+  // Handles mouse down events for window dragging (excludes buttons/inputs)
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement
     if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || 
@@ -34,7 +36,7 @@ export function useApp(contentRef: RefObject<HTMLDivElement | null>) {
     setIsDragging(true)
   }
 
-  // Set up drive mode toggle listener
+  // Sets up drive mode toggle listener from main process
   useEffect(() => {
     if (window.electronAPI?.onToggleDriveMode) {
       const handleToggleDriveMode = () => {
@@ -54,7 +56,7 @@ export function useApp(contentRef: RefObject<HTMLDivElement | null>) {
     }
   }, [])
 
-  // Load app version
+  // Loads app version and initializes the app
   useEffect(() => {
     if (window.electronAPI) {
       window.electronAPI.getAppVersion().then(version => {

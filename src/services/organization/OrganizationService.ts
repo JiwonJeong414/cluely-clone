@@ -1,6 +1,6 @@
 // src/services/organization/OrganizationService.ts
 import { DriveService } from '../drive/DriveService'
-import { DatabaseService } from '../../database/DatabaseService'
+import { DatabaseService } from '../database/DatabaseService'
 
 export interface FileWithEmbedding {
   fileId: string

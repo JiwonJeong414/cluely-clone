@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { CalendarService } from '../../src/services/calendar/CalendarService'
 import { AuthService } from '../../src/services/auth/AuthService'
-import { DatabaseService } from '../../src/database/DatabaseService'
+import { DatabaseService } from '../../src/services/database/DatabaseService'
 
 export function setupCalendarHandlers(
   calendarService: CalendarService, 
