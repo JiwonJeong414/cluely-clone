@@ -1,5 +1,5 @@
+// src/components/AppHeader.tsx - Updated to remove duplicate ChatInput
 import React from 'react'
-import { ChatInput } from './ChatInput'
 import type { AppMode } from '../types/app'
 import type { User, GoogleConnection, CalendarEvent } from '../../electron/preload'
 
@@ -103,11 +103,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           )}
         </div>
       </div>
-
-      {/* Chat Input */}
-      {currentMode === 'chat' && (
-        <ChatInput pendingCapture={pendingCapture} />
-      )}
 
       {/* Mode shortcuts */}
       <div className="mt-2 text-center">
