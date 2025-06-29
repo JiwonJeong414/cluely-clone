@@ -1,14 +1,8 @@
 import React from 'react'
 import type { User, GoogleConnection } from '../../../electron/preload'
+import type { CleanupModeProps } from '../../types/modes'
 
-interface CleanupModeProps {
-  user: User
-  googleConnection: GoogleConnection
-  cleanupCandidates: any[]
-  loadCleanupCandidates: () => void
-  handleDeleteFiles: (fileIds: string[]) => void
-}
-
+/** Identifies and helps delete unnecessary files from Google Drive with confidence scoring. */
 export const CleanupMode: React.FC<CleanupModeProps> = ({
   user,
   googleConnection,

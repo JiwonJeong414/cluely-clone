@@ -3,19 +3,9 @@ import { MapVisualization } from '../MapVisualization'
 import { PlacesList } from '../PlacesList'
 import type { User, GoogleConnection, Place } from '../../../electron/preload'
 import type { AppMode } from '../../types/app'
+import type { MapsModeProps } from '../../types/modes'
 
-interface MapsModeProps {
-  user: User
-  googleConnection: GoogleConnection
-  places: Place[]
-  userLocation: { lat: number; lng: number } | null
-  selectedPlace: Place | null
-  isSearchingMaps: boolean
-  setSelectedPlace: (place: Place | null) => void
-  requestLocationPermission: () => Promise<{ lat: number; lng: number } | null>
-  setCurrentMode: (mode: AppMode) => void
-}
-
+/** Displays interactive maps and nearby places with location-based search and navigation. */
 export const MapsMode: React.FC<MapsModeProps> = ({
   user,
   googleConnection,

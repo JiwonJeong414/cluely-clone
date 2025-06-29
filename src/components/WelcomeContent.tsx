@@ -1,12 +1,8 @@
 import React from 'react'
 import type { User, GoogleConnection } from '../../electron/preload'
+import type { WelcomeContentProps } from '../types/components'
 
-interface WelcomeContentProps {
-  user: User | null
-  googleConnection: GoogleConnection
-  onSuggestionClick: (suggestion: string) => void
-}
-
+/** Welcome screen with smart suggestions and app status information for new users. */
 export const WelcomeContent: React.FC<WelcomeContentProps> = ({
   user,
   googleConnection,

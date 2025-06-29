@@ -1,13 +1,7 @@
 import React, { useState } from 'react'
+import type { AuthButtonProps } from '../types/modes'
 
-interface AuthButtonProps {
-  user: any
-  googleConnection: any
-  onSignIn: () => Promise<void>
-  onSignOut: () => Promise<void>
-  className?: string
-}
-
+/** Handles Google authentication with sign-in/sign-out functionality and user status display. */
 export const AuthButton: React.FC<AuthButtonProps> = ({
   user,
   googleConnection,

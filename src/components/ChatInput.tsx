@@ -1,12 +1,8 @@
 import React, { useState, useRef } from 'react'
 import { AudioButton } from './AudioButton'
+import type { ChatInputProps } from '../types/components'
 
-interface ChatInputProps {
-  pendingCapture: any
-  onSubmit?: (message: string) => void
-  disabled?: boolean
-}
-
+/** Text input field with audio recording capabilities for sending messages to the AI assistant. */
 export const ChatInput: React.FC<ChatInputProps> = ({
   pendingCapture,
   onSubmit,

@@ -1,23 +1,9 @@
-// src/components/AppHeader.tsx - Updated to remove duplicate ChatInput
 import React from 'react'
 import type { AppMode } from '../types/app'
 import type { User, GoogleConnection, CalendarEvent } from '../../electron/preload'
+import type { AppHeaderProps } from '../types/components'
 
-interface AppHeaderProps {
-  user: User | null
-  googleConnection: GoogleConnection
-  currentMode: AppMode
-  setCurrentMode: (mode: AppMode) => void
-  calendarEvents: CalendarEvent[]
-  isDragging: boolean
-  handleMouseDown: (e: React.MouseEvent) => void
-  appVersion: string
-  pendingCapture: any
-  onSignIn: () => Promise<void>
-  onSignOut: () => Promise<void>
-  isAuthenticating: boolean
-}
-
+/** Main application header with mode navigation, user info, and draggable window controls. */
 export const AppHeader: React.FC<AppHeaderProps> = ({
   user,
   googleConnection,

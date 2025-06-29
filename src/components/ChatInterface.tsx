@@ -6,27 +6,9 @@ import { ChatInput } from './ChatInput'
 import { WelcomeContent } from './WelcomeContent'
 import type { Message, PendingCapture } from '../types/app'
 import type { User, GoogleConnection, Place } from '../../electron/preload'
+import type { ChatInterfaceProps } from '../types/components'
 
-interface ChatInterfaceProps {
-  user: User | null
-  googleConnection: GoogleConnection
-  places: Place[]
-  setPlaces: (places: Place[]) => void
-  userLocation: { lat: number; lng: number } | null
-  setUserLocation: (location: { lat: number; lng: number } | null) => void
-  pendingCapture: PendingCapture | null
-  setPendingCapture: (capture: PendingCapture | null) => void
-  isSearchingMaps: boolean
-  setIsSearchingMaps: (searching: boolean) => void
-  lastQueryWasLocation: boolean
-  setLastQueryWasLocation: (was: boolean) => void
-  searchResults: any[]
-  handleCreateEventFromChat: (eventData: any, originalMessage: string) => Promise<void>
-  showDocsNotification: (type: 'success' | 'error', message: string) => void
-  requestLocationPermission: () => Promise<{ lat: number; lng: number } | null>
-  updateDimensions: () => void
-}
-
+/** Main chat interface that handles AI conversations, displays responses, and manages message history. */
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   user,
   googleConnection,

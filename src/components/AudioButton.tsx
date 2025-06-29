@@ -1,11 +1,8 @@
 import React, { useState } from 'react'
 import { Mic, MicOff, Loader2 } from 'lucide-react'
+import type { AudioButtonProps } from '../types/components'
 
-interface AudioButtonProps {
-  onAudioProcessed?: (transcription: string) => void
-  className?: string
-}
-
+/** Records audio input and transcribes it to text for voice-based interactions. */
 export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, className = '' }) => {
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)

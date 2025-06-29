@@ -1,32 +1,9 @@
 import React from 'react'
 import type { User, GoogleConnection, CalendarEvent } from '../../../electron/preload'
 import type { AppMode, CalendarRange } from '../../types/app'
+import type { CalendarModeProps } from '../../types/modes'
 
-interface CalendarModeProps {
-  user: User
-  googleConnection: GoogleConnection
-  calendarEvents: CalendarEvent[]
-  selectedCalendarRange: CalendarRange
-  isLoadingCalendar: boolean
-  showCreateEventForm: boolean
-  setShowCreateEventForm: (show: boolean) => void
-  newEvent: {
-    summary: string
-    description: string
-    startDate: string
-    startTime: string
-    endDate: string
-    endTime: string
-    location: string
-    attendees: string
-  }
-  setNewEvent: (event: any) => void
-  isCreatingEvent: boolean
-  handleCalendarRangeChange: (range: CalendarRange) => void
-  handleCreateEvent: () => void
-  setCurrentMode: (mode: AppMode) => void
-}
-
+/** Displays and manages Google Calendar events with time range filters and event creation capabilities. */
 export const CalendarMode: React.FC<CalendarModeProps> = ({
   user,
   googleConnection,

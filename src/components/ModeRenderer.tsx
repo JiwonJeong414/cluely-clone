@@ -8,64 +8,9 @@ import { OrganizeMode } from './modes/OrganizeMode'
 import { AuthButton } from './AuthButton'
 import type { AppMode, CalendarRange } from '../types/app'
 import type { User, GoogleConnection, CalendarEvent, Place, SyncProgress } from '../../electron/preload'
+import type { ModeRendererProps } from '../types/modes'
 
-interface ModeRendererProps {
-  mode: AppMode
-  user: User | null
-  googleConnection: GoogleConnection
-  
-  // Auth props
-  handleSignIn: () => Promise<void>
-  handleSignOut: () => Promise<void>
-  
-  // Drive props
-  syncProgress: SyncProgress | null
-  syncStats: any
-  isSyncing: boolean
-  cleanupCandidates: any[]
-  organizationClusters: any[]
-  isAnalyzing: boolean
-  handleQuickSync: () => void
-  handleDeepSync: () => void
-  handleForceSync: () => void
-  loadCleanupCandidates: () => void
-  handleDeleteFiles: (fileIds: string[]) => void
-  analyzeForOrganization: () => void
-  
-  // Calendar props
-  calendarEvents: CalendarEvent[]
-  selectedCalendarRange: CalendarRange
-  isLoadingCalendar: boolean
-  showCreateEventForm: boolean
-  setShowCreateEventForm: (show: boolean) => void
-  newEvent: {
-    summary: string
-    description: string
-    startDate: string
-    startTime: string
-    endDate: string
-    endTime: string
-    location: string
-    attendees: string
-  }
-  setNewEvent: (event: any) => void
-  isCreatingEvent: boolean
-  handleCalendarRangeChange: (range: CalendarRange) => void
-  handleCreateEvent: () => void
-  loadCalendarEvents: (range: CalendarRange) => void
-  
-  // Maps props
-  places: Place[]
-  userLocation: { lat: number; lng: number } | null
-  selectedPlace: Place | null
-  isSearchingMaps: boolean
-  setSelectedPlace: (place: Place | null) => void
-  requestLocationPermission: () => Promise<{ lat: number; lng: number } | null>
-  
-  // Shared props
-  setCurrentMode: (mode: AppMode) => void
-}
-
+/** Renders different application modes (Drive, Calendar, Maps, etc.) based on current mode state. */
 export const ModeRenderer: React.FC<ModeRendererProps> = ({
   mode,
   user,

@@ -1,19 +1,9 @@
 import React from 'react'
 import type { User, GoogleConnection } from '../../../electron/preload'
 import type { AppMode } from '../../types/app'
+import type { DriveModeProps } from '../../types/modes'
 
-interface DriveModeProps {
-  user: User
-  googleConnection: GoogleConnection
-  syncProgress: any
-  syncStats: any
-  isSyncing: boolean
-  handleQuickSync: () => void
-  handleDeepSync: () => void
-  handleForceSync: () => void
-  setCurrentMode: (mode: AppMode) => void
-}
-
+/** Manages Google Drive synchronization with different sync strategies and progress tracking. */
 export const DriveMode: React.FC<DriveModeProps> = ({
   user,
   googleConnection,

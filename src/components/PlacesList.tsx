@@ -1,14 +1,9 @@
-
 // src/components/PlacesList.tsx - Compact list view companion
 import React from 'react'
 import type { Place } from '../services/maps/MapsService'
+import type { PlacesListProps } from '../types/components'
 
-interface PlacesListProps {
-  places: Place[]
-  onPlaceSelect?: (place: Place) => void
-  className?: string
-}
-
+/** Compact list view of nearby places with ratings, distance, and quick access to place details. */
 export const PlacesList: React.FC<PlacesListProps> = ({
   places,
   onPlaceSelect,

@@ -1,10 +1,7 @@
 import React from 'react'
+import type { NotificationManagerProps } from '../types/components'
 
-interface NotificationManagerProps {
-  docsNotification: { type: 'success' | 'error'; message: string } | null
-  isCreatingNote: boolean
-}
-
+/** Displays system notifications for Google Docs operations and other app-wide status updates. */
 export const NotificationManager: React.FC<NotificationManagerProps> = ({
   docsNotification,
   isCreatingNote

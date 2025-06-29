@@ -1,14 +1,8 @@
 import React from 'react'
 import type { User, GoogleConnection } from '../../../electron/preload'
+import type { OrganizeModeProps } from '../../types/modes'
 
-interface OrganizeModeProps {
-  user: User
-  googleConnection: GoogleConnection
-  organizationClusters: any[]
-  isAnalyzing: boolean
-  analyzeForOrganization: () => void
-}
-
+/** Analyzes and suggests folder organization for Google Drive files using AI clustering. */
 export const OrganizeMode: React.FC<OrganizeModeProps> = ({
   user,
   googleConnection,

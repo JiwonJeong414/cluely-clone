@@ -1,14 +1,8 @@
 import React from 'react'
 import type { User, GoogleConnection, CalendarEvent } from '../../../electron/preload'
+import type { ProfileModeProps } from '../../types/modes'
 
-interface ProfileModeProps {
-  user: User
-  googleConnection: GoogleConnection
-  calendarEvents: CalendarEvent[]
-  handleSignOut: () => void
-  requestLocationPermission: () => Promise<{ lat: number; lng: number } | null>
-}
-
+/** Shows user profile information, connected services status, and account management options. */
 export const ProfileMode: React.FC<ProfileModeProps> = ({
   user,
   googleConnection,
