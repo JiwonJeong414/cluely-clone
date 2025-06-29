@@ -18,7 +18,7 @@ export function setupDriveHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('🚀 Starting enhanced Drive sync...')
+      console.log('Starting enhanced Drive sync...')
       
       const { limit = 10, force = false, strategy = 'new_files_only' } = options
 
@@ -31,10 +31,10 @@ export function setupDriveHandlers(
         { limit, force, strategy }
       )
       
-      console.log('✅ Enhanced Drive sync completed:', result)
+      console.log('[✓] Enhanced Drive sync completed:', result)
       return { success: true, result }
     } catch (error) {
-      console.error('❌ Enhanced Drive sync error:', error)
+      console.error('Enhanced Drive sync error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Sync failed' 
@@ -50,7 +50,7 @@ export function setupDriveHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('🔄 Starting force sync...')
+      console.log('Starting force sync...')
       
       const result = await driveService.forceSyncFiles(
         (progress) => {
@@ -61,10 +61,10 @@ export function setupDriveHandlers(
         options.limit || 10
       )
       
-      console.log('✅ Force sync completed:', result)
+      console.log('[✓] Force sync completed:', result)
       return { success: true, result }
     } catch (error) {
-      console.error('❌ Force sync error:', error)
+      console.error('Force sync error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Force sync failed' 
@@ -80,7 +80,7 @@ export function setupDriveHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('🆕 Starting new files sync...')
+      console.log('Starting new files sync...')
       
       const result = await driveService.syncNewFiles(
         (progress) => {
@@ -91,10 +91,10 @@ export function setupDriveHandlers(
         options.limit || 10
       )
       
-      console.log('✅ New files sync completed:', result)
+      console.log('[✓] New files sync completed:', result)
       return { success: true, result }
     } catch (error) {
-      console.error('❌ New files sync error:', error)
+      console.error('New files sync error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'New files sync failed' 
@@ -113,7 +113,7 @@ export function setupDriveHandlers(
       const stats = await driveService.getSyncStats(user.id)
       return { success: true, stats }
     } catch (error) {
-      console.error('❌ Get sync stats error:', error)
+      console.error('Get sync stats error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Get stats failed' 
@@ -129,14 +129,14 @@ export function setupDriveHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log(`🔍 Searching Drive for: "${query}"`)
+      console.log(`Searching Drive for: "${query}"`)
       
       const results = await driveService.searchDocuments(query, limit)
       
-      console.log(`✅ Found ${results.length} results`)
+      console.log(`[✓] Found ${results.length} results`)
       return { success: true, results }
     } catch (error) {
-      console.error('❌ Drive search error:', error)
+      console.error(' Drive search error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Search failed' 
@@ -155,7 +155,7 @@ export function setupDriveHandlers(
       const files = await driveService.listFiles(options)
       return { success: true, files }
     } catch (error) {
-      console.error('❌ Drive list files error:', error)
+      console.error('Drive list files error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'List files failed' 
@@ -172,10 +172,10 @@ export function setupDriveHandlers(
       }
       
       await driveService.deleteFile(fileId)
-      console.log(`✅ Deleted file: ${fileId}`)
+      console.log(`[✓] Deleted file: ${fileId}`)
       return { success: true }
     } catch (error) {
-      console.error(`❌ Drive delete file error:`, error)
+      console.error(`Drive delete file error:`, error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Delete failed' 
@@ -218,14 +218,14 @@ export function setupDriveHandlers(
         deletedFileNames: fileIds
       })
       
-      console.log(`✅ Deleted ${successCount}/${fileIds.length} files`)
+      console.log(`[✓] Deleted ${successCount}/${fileIds.length} files`)
       return { 
         success: true, 
         results,
         summary: { total: fileIds.length, deleted: successCount, errors: errorCount }
       }
     } catch (error) {
-      console.error('❌ Drive delete files error:', error)
+      console.error('Drive delete files error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Bulk delete failed' 
@@ -242,10 +242,10 @@ export function setupDriveHandlers(
       }
       
       const folderId = await driveService.createFolder(name)
-      console.log(`✅ Created folder: ${name} (${folderId})`)
+      console.log(`[✓] Created folder: ${name} (${folderId})`)
       return { success: true, folderId }
     } catch (error) {
-      console.error('❌ Drive create folder error:', error)
+      console.error('Drive create folder error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Create folder failed' 
@@ -262,10 +262,10 @@ export function setupDriveHandlers(
       }
       
       await driveService.moveFileToFolder(fileId, folderId)
-      console.log(`✅ Moved file ${fileId} to folder ${folderId}`)
+      console.log(`[✓] Moved file ${fileId} to folder ${folderId}`)
       return { success: true }
     } catch (error) {
-      console.error('❌ Drive move file error:', error)
+      console.error('Drive move file error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Move file failed' 
@@ -286,7 +286,7 @@ export function setupDriveHandlers(
       const files = await vectorService.getUserIndexedFiles(user.id)
       return { success: true, files }
     } catch (error) {
-      console.error('❌ Get indexed files error:', error)
+      console.error('Get indexed files error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Get indexed files failed' 
@@ -304,7 +304,7 @@ export function setupDriveHandlers(
       const candidates = await dbService.getCleanupCandidates(user.id, maxFiles)
       return { success: true, candidates }
     } catch (error) {
-      console.error('❌ Get cleanup candidates error:', error)
+      console.error('Get cleanup candidates error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Get cleanup candidates failed' 

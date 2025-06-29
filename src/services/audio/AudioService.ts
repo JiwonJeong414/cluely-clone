@@ -1,3 +1,11 @@
+/**
+ * Audio Service
+ * 
+ * Handles audio capture, transcription, and processing for interview assistance.
+ * Provides functionality for recording system audio, transcribing speech to text,
+ * and generating AI-powered responses for interview preparation.
+ */
+
 import { desktopCapturer, BrowserWindow } from 'electron'
 import type { AudioCaptureOptions, AudioCaptureResult } from '../../types'
 
@@ -8,6 +16,10 @@ export class AudioService {
 
   private constructor() {}
 
+  /**
+   * Get the singleton instance of AudioService
+   * @returns AudioService - The singleton instance
+   */
   static getInstance(): AudioService {
     if (!AudioService.instance) {
       AudioService.instance = new AudioService()
@@ -15,10 +27,19 @@ export class AudioService {
     return AudioService.instance
   }
 
+  /**
+   * Set the main window reference for audio capture coordination
+   * @param window - The main Electron browser window
+   */
   setMainWindow(window: BrowserWindow) {
     this.mainWindow = window
   }
 
+  /**
+   * Start audio capture from system sources
+   * @param options - Audio capture configuration options
+   * @returns Promise<AudioCaptureResult> - Result indicating success or failure with error details
+   */
   async startAudioCapture(options: AudioCaptureOptions = {}): Promise<AudioCaptureResult> {
     if (this.isCapturing) {
       return { success: false, error: 'Audio capture already in progress' }
@@ -37,12 +58,8 @@ export class AudioService {
       if (sources.length === 0) {
         throw new Error('No screen sources found for audio capture')
       }
-
-      // For now, we'll use a simplified approach
-      // The actual audio capture will be handled in the renderer process
-      // This service will coordinate the process
       
-      console.log('✅ Audio capture setup completed')
+      console.log('[✓] Audio capture setup completed')
       return { success: true }
 
     } catch (error) {
@@ -54,13 +71,17 @@ export class AudioService {
     }
   }
 
+  /**
+   * Stop the current audio capture session
+   * @returns Promise<AudioCaptureResult> - Result indicating success or failure
+   */
   async stopAudioCapture(): Promise<AudioCaptureResult> {
     if (!this.isCapturing) {
       return { success: false, error: 'No audio capture in progress' }
     }
 
     try {
-      console.log('🛑 Stopping audio capture...')
+      console.log('Stopping audio capture...')
       this.isCapturing = false
       return { success: true }
     } catch (error) {
@@ -72,10 +93,19 @@ export class AudioService {
     }
   }
 
+  /**
+   * Check if audio capture is currently active
+   * @returns boolean - True if audio capture is in progress
+   */
   isCapturingAudio(): boolean {
     return this.isCapturing
   }
 
+  /**
+   * Transcribe audio data to text using OpenAI Whisper API
+   * @param audioData - Raw audio data as ArrayBuffer
+   * @returns Promise<{ success: boolean; text?: string; error?: string }> - Transcription result with text or error
+   */
   async transcribeAudio(audioData: ArrayBuffer): Promise<{ success: boolean; text?: string; error?: string }> {
     try {
       const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
@@ -109,7 +139,7 @@ export class AudioService {
       }
 
     } catch (error) {
-      console.error('❌ Transcription error:', error)
+      console.error('Transcription error:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Transcription failed'
@@ -117,6 +147,11 @@ export class AudioService {
     }
   }
 
+  /**
+   * Process audio for interview assistance with AI-powered feedback
+   * @param audioData - Raw audio data as ArrayBuffer
+   * @returns Promise<{ success: boolean; response?: string; error?: string }> - AI response or error
+   */
   async processAudioForInterview(audioData: ArrayBuffer): Promise<{ success: boolean; response?: string; error?: string }> {
     try {
       const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
@@ -131,7 +166,7 @@ export class AudioService {
         return { success: false, error: 'Failed to transcribe audio' }
       }
 
-      console.log('📝 Transcription:', transcription.text)
+      console.log('[✓] Transcription:', transcription.text)
 
       // Send to OpenAI for interview assistance
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -170,7 +205,7 @@ export class AudioService {
       const result = await response.json()
       const aiResponse = result.choices[0]?.message?.content || 'No response generated'
       
-      console.log('🤖 AI Response:', aiResponse)
+      console.log('AI Response:', aiResponse)
       
       return {
         success: true,
@@ -178,7 +213,7 @@ export class AudioService {
       }
 
     } catch (error) {
-      console.error('❌ Audio processing error:', error)
+      console.error('Audio processing error:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to process audio'
@@ -186,6 +221,13 @@ export class AudioService {
     }
   }
 
+  /**
+   * Analyze base64-encoded audio data for interview assistance
+   * @param data - Base64-encoded audio data
+   * @param mimeType - MIME type of the audio data
+   * @returns Promise<{ text: string; timestamp: number }> - AI response with timestamp
+   * @throws {Error} If audio processing fails
+   */
   async analyzeAudioFromBase64(data: string, mimeType: string): Promise<{ text: string; timestamp: number }> {
     try {
       const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
@@ -214,11 +256,18 @@ export class AudioService {
       }
 
     } catch (error) {
-      console.error('❌ Audio analysis error:', error)
+      console.error('Audio analysis error:', error)
       throw error
     }
   }
 
+  /**
+   * Transcribe base64-encoded audio data to text
+   * @param data - Base64-encoded audio data
+   * @param mimeType - MIME type of the audio data
+   * @returns Promise<{ text: string; timestamp: number }> - Transcribed text with timestamp
+   * @throws {Error} If transcription fails
+   */
   async transcribeAudioFromBase64(data: string, mimeType: string): Promise<{ text: string; timestamp: number }> {
     try {
       const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
@@ -247,7 +296,7 @@ export class AudioService {
       }
 
     } catch (error) {
-      console.error('❌ Audio transcription error:', error)
+      console.error('Audio transcription error:', error)
       throw error
     }
   }

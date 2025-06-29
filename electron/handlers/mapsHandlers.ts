@@ -11,29 +11,29 @@ export function setupMapsHandlers(mapsService: MapsService) {
       let location = options?.location
       if (!location) {
         try {
-          console.log('📍 Requesting location from renderer process...')
+          console.log('Requesting location from renderer process...')
           const locationResult = await event.sender.executeJavaScript(`
             new Promise((resolve, reject) => {
-              console.log('🌍 Checking geolocation support...');
+              console.log('Checking geolocation support...');
               
               if (!navigator.geolocation) {
-                console.error('❌ Geolocation not supported');
+                console.error('Geolocation not supported');
                 reject(new Error('Geolocation not supported'));
                 return;
               }
               
-              console.log('✅ Geolocation supported, requesting position...');
+              console.log('[✓] Geolocation supported, requesting position...');
               
               navigator.geolocation.getCurrentPosition(
                 (position) => {
-                  console.log('✅ Location obtained:', position.coords);
+                  console.log('[✓] Location obtained:', position.coords);
                   resolve({ 
                     lat: position.coords.latitude, 
                     lng: position.coords.longitude 
                   });
                 },
                 (error) => {
-                  console.error('❌ Geolocation error:', error);
+                  console.error('Geolocation error:', error);
                   console.error('Error code:', error.code);
                   console.error('Error message:', error.message);
                   
@@ -64,9 +64,9 @@ export function setupMapsHandlers(mapsService: MapsService) {
           `)
           
           location = locationResult
-          console.log('📍 Got location from renderer:', location)
+          console.log('[✓] Got location from renderer:', location)
         } catch (locationError) {
-          console.error('❌ Failed to get location:', locationError)
+          console.error('Failed to get location:', locationError)
           
           return { 
             success: false, 
@@ -85,10 +85,10 @@ export function setupMapsHandlers(mapsService: MapsService) {
       const searchOptions = { ...options, location }
       const places = await mapsService.searchNearby(query, searchOptions)
       
-      console.log(`✅ Found ${places.length} places`)
+      console.log(`[✓] Found ${places.length} places`)
       return { success: true, places }
     } catch (error) {
-      console.error('❌ Maps search error:', error)
+      console.error('Maps search error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Maps search failed' 
@@ -99,23 +99,23 @@ export function setupMapsHandlers(mapsService: MapsService) {
   // Get location from renderer
   ipcMain.handle('maps-get-location', async (event) => {
     try {
-      console.log('📍 Getting location from renderer process...')
+      console.log('Getting location from renderer process...')
       
       const location = await event.sender.executeJavaScript(`
         new Promise((resolve, reject) => {
-          console.log('🌍 Checking geolocation in renderer process...');
+          console.log('Checking geolocation in renderer process...');
           
           if (!navigator.geolocation) {
-            console.error('❌ Geolocation not supported in this context');
+            console.error('Geolocation not supported in this context');
             reject(new Error('Geolocation not supported'));
             return;
           }
           
-          console.log('✅ Requesting geolocation...');
+          console.log('[✓] Requesting geolocation...');
           
           navigator.geolocation.getCurrentPosition(
             (position) => {
-              console.log('✅ Got location successfully:', {
+              console.log('[✓] Got location successfully:', {
                 lat: position.coords.latitude,
                 lng: position.coords.longitude,
                 accuracy: position.coords.accuracy
@@ -127,7 +127,7 @@ export function setupMapsHandlers(mapsService: MapsService) {
               });
             },
             (error) => {
-              console.error('❌ Geolocation failed in renderer:', {
+              console.error('Geolocation failed in renderer:', {
                 code: error.code,
                 message: error.message
               });
@@ -158,10 +158,10 @@ export function setupMapsHandlers(mapsService: MapsService) {
         });
       `)
       
-      console.log('✅ Got location:', location)
+      console.log('[✓] Got location:', location)
       return { success: true, location }
     } catch (error) {
-      console.error('❌ Get location error:', error)
+      console.error('Get location error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get location' 
@@ -175,7 +175,7 @@ export function setupMapsHandlers(mapsService: MapsService) {
       const place = await mapsService.getPlaceDetails(placeId)
       return { success: true, place }
     } catch (error) {
-      console.error('❌ Get place details error:', error)
+      console.error('Get place details error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get place details' 
@@ -189,7 +189,7 @@ export function setupMapsHandlers(mapsService: MapsService) {
       const travelInfo = await mapsService.getTravelTime(origin, destination, mode)
       return { success: true, travelInfo }
     } catch (error) {
-      console.error('❌ Get travel time error:', error)
+      console.error('Get travel time error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get travel time' 

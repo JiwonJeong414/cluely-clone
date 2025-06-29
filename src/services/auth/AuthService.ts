@@ -1,3 +1,11 @@
+/**
+ * Authentication Service
+ * 
+ * Handles user authentication with Google OAuth2, including sign-in, sign-out,
+ * and session management. Manages Google API connections for Drive, Calendar,
+ * and Documents access. Integrates with database for user persistence.
+ */
+
 import { shell } from 'electron'
 import { google } from 'googleapis'
 import * as crypto from 'crypto'
@@ -16,6 +24,10 @@ export class AuthService {
     this.initializeOAuth()
   }
 
+  /**
+   * Get the singleton instance of AuthService
+   * @returns AuthService - The singleton instance
+   */
   static getInstance(): AuthService {
     if (!AuthService.instance) {
       AuthService.instance = new AuthService()
@@ -23,6 +35,10 @@ export class AuthService {
     return AuthService.instance
   }
 
+  /**
+   * Initialize OAuth2 client with Google API credentials
+   * Sets up the OAuth2 client with client ID, secret, and callback URL
+   */
   private initializeOAuth() {
     this.oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -31,6 +47,12 @@ export class AuthService {
     )
   }
 
+  /**
+   * Sign in user with Google OAuth2 authentication
+   * Opens browser for Google authentication and handles OAuth callback
+   * @returns Promise<User> - The authenticated user object
+   * @throws {Error} If authentication fails or times out
+   */
   async signInWithGoogle(): Promise<User> {
     return new Promise((resolve, reject) => {
       try {
@@ -110,7 +132,7 @@ export class AuthService {
               res.end(`
                 <html>
                   <body style="font-family: system-ui; text-align: center; padding: 50px;">
-                    <h2>✅ Authentication Successful!</h2>
+                    <h2>[✓] Authentication Successful!</h2>
                     <p>You can now close this window and return to Wingman.</p>
                     <script>setTimeout(() => window.close(), 2000)</script>
                   </body>
@@ -127,7 +149,7 @@ export class AuthService {
             res.end(`
               <html>
                 <body style="font-family: system-ui; text-align: center; padding: 50px;">
-                  <h2>❌ Authentication Failed</h2>
+                  <h2>Authentication Failed</h2>
                   <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
                   <script>setTimeout(() => window.close(), 3000)</script>
                 </body>
@@ -158,6 +180,10 @@ export class AuthService {
     })
   }
 
+  /**
+   * Sign out the current user and clear authentication state
+   * Clears current user, Google connection, and OAuth credentials
+   */
   async signOut() {
     this.currentUser = null
     this.googleConnection = { isConnected: false }
@@ -167,14 +193,26 @@ export class AuthService {
     }
   }
 
+  /**
+   * Get the currently authenticated user
+   * @returns User | null - The current user object or null if not authenticated
+   */
   getCurrentUser(): User | null {
     return this.currentUser
   }
 
+  /**
+   * Get the current Google connection status and tokens
+   * @returns GoogleConnection - The current Google connection information
+   */
   getGoogleConnection(): GoogleConnection {
     return this.googleConnection
   }
 
+  /**
+   * Load user session from database on application startup
+   * Restores user authentication state and Google connection from persistent storage
+   */
   async loadUserFromStorage(): Promise<void> {
     // Load user from database on app startup
     // This would need to be implemented based on how you want to persist sessions
@@ -211,6 +249,10 @@ export class AuthService {
     }
   }
 
+  /**
+   * Get the OAuth2 client for making authenticated API requests
+   * @returns any - The configured OAuth2 client instance
+   */
   getOAuthClient() {
     return this.oauth2Client
   }

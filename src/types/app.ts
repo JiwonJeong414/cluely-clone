@@ -1,9 +1,24 @@
+/**
+ * Application-level type definitions
+ * Core types for the main application state, modes, and user interactions
+ */
+
 // Import types from electron preload
 import type { User, GoogleConnection, CalendarEvent, SyncProgress, Place, CreateEventRequest, DriveFile } from '../../electron/preload'
 
+/**
+ * Available application modes for different functionality
+ */
 export type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar' | 'profile' | 'maps'
+
+/**
+ * Calendar view range options
+ */
 export type CalendarRange = 'today' | 'week' | 'next-week'
 
+/**
+ * Represents a chat message in the conversation interface
+ */
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -15,13 +30,18 @@ export interface Message {
   calendarContext?: string
 }
 
+/**
+ * Represents a pending screen capture or audio recording
+ */
 export interface PendingCapture {
   type: 'screenshot' | 'audio'
   data: string
   timestamp: Date
 }
 
-// Hook-specific types
+/**
+ * Props for the keyboard shortcuts hook
+ */
 export interface UseKeyboardShortcutsProps {
   currentMode: AppMode
   setCurrentMode: (mode: AppMode | ((prev: AppMode) => AppMode)) => void
@@ -31,6 +51,9 @@ export interface UseKeyboardShortcutsProps {
   loadCalendarEvents: (range: CalendarRange) => void
 }
 
+/**
+ * Data structure for creating a new calendar event
+ */
 export interface NewEvent {
   summary: string
   description: string
@@ -42,6 +65,9 @@ export interface NewEvent {
   attendees: string
 }
 
+/**
+ * Options for Google Drive synchronization
+ */
 export interface SyncOptions {
   limit?: number
   force?: boolean

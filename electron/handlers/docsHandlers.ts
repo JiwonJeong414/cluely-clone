@@ -11,13 +11,13 @@ export function setupDocsHandlers(docsService: GoogleDocsService, authService: A
         return { success: false, error: 'User not authenticated' }
       }
 
-      console.log('📝 Creating Google Doc note...')
+      console.log('Creating Google Doc note...')
       const doc = await docsService.createNote(noteContent)
       
-      console.log('✅ Google Doc note created successfully')
+      console.log('[✓] Google Doc note created successfully')
       return { success: true, doc }
     } catch (error) {
-      console.error('❌ Create Google Doc note error:', error)
+      console.error('Create Google Doc note error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to create Google Doc note' 
@@ -33,13 +33,13 @@ export function setupDocsHandlers(docsService: GoogleDocsService, authService: A
         return { success: false, error: 'User not authenticated' }
       }
 
-      console.log('📸 Creating screenshot note in Google Docs...')
+      console.log('Creating screenshot note in Google Docs...')
       const doc = await docsService.createScreenshotNote(title, screenshotUrl, aiAnalysis, userQuestion)
       
-      console.log('✅ Screenshot note created successfully')
+      console.log('[✓] Screenshot note created successfully')
       return { success: true, doc }
     } catch (error) {
-      console.error('❌ Create screenshot note error:', error)
+      console.error('Create screenshot note error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to create screenshot note' 
@@ -55,13 +55,13 @@ export function setupDocsHandlers(docsService: GoogleDocsService, authService: A
         return { success: false, error: 'User not authenticated' }
       }
 
-      console.log('🎵 Creating audio note in Google Docs...')
+      console.log('Creating audio note in Google Docs...')
       const doc = await docsService.createAudioNote(title, transcription, aiAnalysis, audioDuration)
       
-      console.log('✅ Audio note created successfully')
+      console.log('[✓] Audio note created successfully')
       return { success: true, doc }
     } catch (error) {
-      console.error('❌ Create audio note error:', error)
+      console.error('Create audio note error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to create audio note' 
@@ -77,13 +77,13 @@ export function setupDocsHandlers(docsService: GoogleDocsService, authService: A
         return { success: false, error: 'User not authenticated' }
       }
 
-      console.log('💬 Creating conversation note in Google Docs...')
+      console.log('Creating conversation note in Google Docs...')
       const doc = await docsService.createConversationNote(title, conversation, aiSummary)
       
-      console.log('✅ Conversation note created successfully')
+      console.log('[✓] Conversation note created successfully')
       return { success: true, doc }
     } catch (error) {
-      console.error('❌ Create conversation note error:', error)
+      console.error('Create conversation note error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to create conversation note' 
@@ -99,13 +99,13 @@ export function setupDocsHandlers(docsService: GoogleDocsService, authService: A
         return { success: false, error: 'User not authenticated' }
       }
 
-      console.log('📝 Appending to Google Doc...')
+      console.log('Appending to Google Doc...')
       await docsService.appendToNote(documentId, content)
       
-      console.log('✅ Content appended successfully')
+      console.log('[✓] Content appended successfully')
       return { success: true }
     } catch (error) {
-      console.error('❌ Append to note error:', error)
+      console.error('Append to note error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to append to note' 
@@ -121,13 +121,13 @@ export function setupDocsHandlers(docsService: GoogleDocsService, authService: A
         return { success: false, error: 'User not authenticated' }
       }
 
-      console.log('📚 Listing recent Google Docs...')
+      console.log('Listing recent Google Docs...')
       const docs = await docsService.listRecentDocs(limit)
       
-      console.log(`✅ Found ${docs.length} recent Google Docs`)
+      console.log(`[✓] Found ${docs.length} recent Google Docs`)
       return { success: true, docs }
     } catch (error) {
-      console.error('❌ List recent docs error:', error)
+      console.error('List recent docs error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to list recent docs' 
@@ -143,13 +143,13 @@ export function setupDocsHandlers(docsService: GoogleDocsService, authService: A
         return { success: false, error: 'User not authenticated' }
       }
 
-      console.log('📄 Getting Google Doc...')
+      console.log('Getting Google Doc...')
       const doc = await docsService.getDoc(documentId)
       
-      console.log('✅ Google Doc retrieved successfully')
+      console.log('[✓] Google Doc retrieved successfully')
       return { success: true, doc }
     } catch (error) {
-      console.error('❌ Get doc error:', error)
+      console.error('Get doc error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get doc' 

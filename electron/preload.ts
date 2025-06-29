@@ -1,4 +1,3 @@
-// electron/preload.ts - Updated with Drive functionality
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -137,7 +136,6 @@ export interface User {
   photoURL?: string
 }
 
-// FIXED: Use consistent naming - GoogleConnection instead of DriveConnection
 export interface GoogleConnection {
   isConnected: boolean
   accessToken?: string

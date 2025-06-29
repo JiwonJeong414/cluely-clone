@@ -1,7 +1,11 @@
 /**
  * Database-related type definitions
+ * TypeScript interfaces for database entities and data structures
  */
 
+/**
+ * Represents a document record in the database
+ */
 export interface DocumentRecord {
   id: string
   driveId: string
@@ -13,6 +17,9 @@ export interface DocumentRecord {
   userId: string
 }
 
+/**
+ * Represents a document embedding for vector search
+ */
 export interface DocumentEmbedding {
   id: string
   fileId: string
@@ -24,6 +31,9 @@ export interface DocumentEmbedding {
   userId: string
 }
 
+/**
+ * Represents a file candidate for cleanup operations
+ */
 export interface CleanupCandidate {
   id: string
   name: string
@@ -37,6 +47,9 @@ export interface CleanupCandidate {
   selected: boolean
 }
 
+/**
+ * Represents user data stored in the database
+ */
 export interface UserData {
   uid: string
   email: string
@@ -44,12 +57,18 @@ export interface UserData {
   photoURL?: string
 }
 
+/**
+ * Represents Google connection data for authentication
+ */
 export interface GoogleConnectionData {
   accessToken: string
   refreshToken?: string
   isConnected: boolean
 }
 
+/**
+ * Represents document data for database operations
+ */
 export interface DocumentData {
   driveId: string
   name: string
@@ -60,6 +79,9 @@ export interface DocumentData {
   userId: string
 }
 
+/**
+ * Represents embedding data for vector operations
+ */
 export interface EmbeddingData {
   fileId: string
   fileName: string
@@ -70,6 +92,9 @@ export interface EmbeddingData {
   userId: string
 }
 
+/**
+ * Represents message data for chat history
+ */
 export interface MessageData {
   content: string
   sender: string
@@ -77,6 +102,9 @@ export interface MessageData {
   driveContext?: any[]
 }
 
+/**
+ * Represents cleanup activity tracking data
+ */
 export interface CleanupActivityData {
   filesDeleted: number
   filesRequested: number
@@ -84,6 +112,9 @@ export interface CleanupActivityData {
   deletedFileNames: string[]
 }
 
+/**
+ * Represents organization activity tracking data
+ */
 export interface OrganizationActivityData {
   clusterName: string
   folderName: string

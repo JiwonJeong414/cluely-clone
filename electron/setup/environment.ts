@@ -21,7 +21,7 @@ export function setupEnvironment() {
     try {
       const result = dotenv.config({ path: envPath })
       if (!result.error) {
-        console.log('✅ Successfully loaded .env from:', envPath)
+        console.log('[✓] Successfully loaded .env from:', envPath)
         envLoaded = true
         break
       }
@@ -31,7 +31,7 @@ export function setupEnvironment() {
   }
 
   if (!envLoaded) {
-    console.log('⚠️ No .env file found, using system environment variables only')
+    console.log('No .env file found, using system environment variables only')
   }
 
   // Debug logging for API key troubleshooting
@@ -67,12 +67,12 @@ function logEnvironmentDebugInfo() {
   const relevantEnvVars = Object.keys(process.env).filter(key => 
     key.includes('GOOGLE') || key.includes('API') || key.includes('MAPS') || key.includes('OPENAI')
   )
-  console.log('🔑 Relevant environment variables found:', relevantEnvVars)
+  console.log('Relevant environment variables found:', relevantEnvVars)
 
   // Check OpenAI API key availability
   if (process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY) {
-    console.log('✅ OpenAI API key found, audio processing will be available')
+    console.log('[✓] OpenAI API key found, audio processing will be available')
   } else {
-    console.log('⚠️ OPENAI_API_KEY not found, audio processing will be limited')
+    console.log('OPENAI_API_KEY not found, audio processing will be limited')
   }
 }

@@ -1,3 +1,11 @@
+/**
+ * Vector Service
+ * 
+ * Handles document embeddings and vector similarity search using Ollama.
+ * Provides functionality for creating embeddings, storing document chunks,
+ * and performing semantic search across indexed documents.
+ */
+
 import { DatabaseService } from '../database/DatabaseService'
 import type { SearchResult } from '../../types'
 
@@ -11,6 +19,10 @@ export class VectorService {
     this.ollamaEndpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434'
   }
 
+  /**
+   * Get the singleton instance of VectorService
+   * @returns VectorService - The singleton instance
+   */
   static getInstance(): VectorService {
     if (!VectorService.instance) {
       VectorService.instance = new VectorService()
@@ -18,6 +30,10 @@ export class VectorService {
     return VectorService.instance
   }
 
+  /**
+   * Check if the required embedding model is available in Ollama
+   * @returns Promise<boolean> - True if embedding model is available
+   */
   async checkEmbeddingModel(): Promise<boolean> {
     try {
       const response = await fetch(`${this.ollamaEndpoint}/api/tags`)
@@ -37,6 +53,12 @@ export class VectorService {
     }
   }
 
+  /**
+   * Create an embedding vector for a given text using Ollama
+   * @param text - Text to create embedding for
+   * @returns Promise<number[]> - Embedding vector
+   * @throws {Error} If embedding creation fails
+   */
   async createEmbedding(text: string): Promise<number[]> {
     try {
       const response = await fetch(`${this.ollamaEndpoint}/api/embeddings`, {
@@ -62,6 +84,15 @@ export class VectorService {
     }
   }
 
+  /**
+   * Store document embeddings by splitting content into chunks and creating embeddings
+   * @param userId - The user's database ID
+   * @param fileId - The file ID to store embeddings for
+   * @param fileName - The name of the file
+   * @param content - The file content to process
+   * @returns Promise<void>
+   * @throws {Error} If embedding storage fails
+   */
   async storeDocumentEmbeddings(
     userId: string,
     fileId: string,
@@ -98,7 +129,7 @@ export class VectorService {
             userId
           })
           
-          console.log(`✅ Stored embedding for ${fileName} chunk ${i + 1}/${chunks.length}`)
+          console.log(`[✓] Stored embedding for ${fileName} chunk ${i + 1}/${chunks.length}`)
         }
       }
     } catch (error) {
@@ -107,6 +138,14 @@ export class VectorService {
     }
   }
 
+  /**
+   * Search for similar documents using vector similarity
+   * @param userId - The user's database ID
+   * @param query - Search query string
+   * @param limit - Maximum number of results to return (default: 5)
+   * @returns Promise<SearchResult[]> - Array of similar documents with relevance scores
+   * @throws {Error} If search fails
+   */
   async searchSimilarDocuments(
     userId: string,
     query: string,
@@ -149,6 +188,11 @@ export class VectorService {
     }
   }
 
+  /**
+   * Preprocess text by cleaning whitespace and normalizing formatting
+   * @param text - Raw text to preprocess
+   * @returns string - Cleaned and normalized text
+   */
   private preprocessText(text: string): string {
     // Remove excessive whitespace and normalize
     return text
@@ -157,6 +201,12 @@ export class VectorService {
       .trim()
   }
 
+  /**
+   * Split text into chunks for embedding processing
+   * @param text - Text to split into chunks
+   * @param maxChunkSize - Maximum size of each chunk in characters
+   * @returns string[] - Array of text chunks
+   */
   private splitIntoChunks(text: string, maxChunkSize: number): string[] {
     if (text.length <= maxChunkSize) {
       return [text]
@@ -186,6 +236,11 @@ export class VectorService {
     return chunks.filter(chunk => chunk.length > 50) // Filter out very short chunks
   }
 
+  /**
+   * Get information about files that have been indexed for a user
+   * @param userId - The user's database ID
+   * @returns Promise<any[]> - Array of indexed file information
+   */
   async getUserIndexedFiles(userId: string) {
     const embeddings = await this.db.getDocumentEmbeddings(userId)
     

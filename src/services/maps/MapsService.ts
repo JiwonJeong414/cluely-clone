@@ -1,3 +1,11 @@
+/**
+ * Maps Service
+ * 
+ * Handles Google Maps integration for location-based services and place search.
+ * Provides functionality for searching nearby places, getting travel times,
+ * and retrieving place details. Supports location query parsing and intent detection.
+ */
+
 import type { Place, SearchOptions, GooglePlacesResponse, GoogleDistanceMatrixResponse, GooglePlaceDetailsResponse } from '../../types'
 
 export class MapsService {
@@ -8,6 +16,10 @@ export class MapsService {
     this.apiKey = process.env.GOOGLE_MAPS_API_KEY || ''
   }
 
+  /**
+   * Get the singleton instance of MapsService
+   * @returns MapsService - The singleton instance
+   */
   static getInstance(): MapsService {
     if (!MapsService.instance) {
       MapsService.instance = new MapsService()
@@ -15,7 +27,12 @@ export class MapsService {
     return MapsService.instance
   }
 
-  // Get user's current location - Note: This only works in renderer process
+  /**
+   * Get user's current location
+   * Note: This method should only be called from the renderer process
+   * @returns Promise<{ lat: number; lng: number }> - Current location coordinates
+   * @throws {Error} If called from main process or location access fails
+   */
   async getCurrentLocation(): Promise<{ lat: number; lng: number }> {
     return new Promise((resolve, reject) => {
       // This method should only be called from the renderer process
@@ -23,7 +40,13 @@ export class MapsService {
     })
   }
 
-  // Search for places nearby
+  /**
+   * Search for places nearby a given location
+   * @param query - Search query for places
+   * @param options - Search options including location, radius, type, and filters
+   * @returns Promise<Place[]> - Array of nearby places with travel information
+   * @throws {Error} If location is not provided or API call fails
+   */
   async searchNearby(query: string, options: SearchOptions = {}): Promise<Place[]> {
     try {
       // Location must be provided from renderer process
@@ -92,7 +115,13 @@ export class MapsService {
     }
   }
 
-  // Get travel time between two points
+  /**
+   * Get travel time and distance between two points
+   * @param origin - Starting location coordinates
+   * @param destination - Destination location coordinates
+   * @param mode - Travel mode: driving, walking, or transit (default: driving)
+   * @returns Promise<{ distance: string; duration: string } | null> - Travel information or null if unavailable
+   */
   async getTravelTime(
     origin: { lat: number; lng: number },
     destination: { lat: number; lng: number },
@@ -128,7 +157,11 @@ export class MapsService {
     }
   }
 
-  // Get place details by place ID
+  /**
+   * Get detailed information about a specific place by its ID
+   * @param placeId - Google Places place ID
+   * @returns Promise<Place | null> - Detailed place information or null if not found
+   */
   async getPlaceDetails(placeId: string): Promise<Place | null> {
     try {
       const params = new URLSearchParams({
@@ -169,7 +202,11 @@ export class MapsService {
     }
   }
 
-  // Check if query is location-related
+  /**
+   * Check if a query is location-related
+   * @param query - Query string to analyze
+   * @returns boolean - True if the query appears to be location-related
+   */
   isLocationQuery(query: string): boolean {
     const locationKeywords = [
       'near me', 'nearby', 'closest', 'nearest', 'around here',
@@ -182,7 +219,11 @@ export class MapsService {
     return locationKeywords.some(keyword => lowerQuery.includes(keyword))
   }
 
-  // Smart query parsing to extract location intent
+  /**
+   * Parse a location query to extract search terms, place types, and modifiers
+   * @param query - Raw location query string
+   * @returns { searchTerm: string, type?: string, modifier?: string } - Parsed query components
+   */
   parseLocationQuery(query: string): { 
     searchTerm: string
     type?: string

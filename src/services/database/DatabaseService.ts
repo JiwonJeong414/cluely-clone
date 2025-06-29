@@ -52,9 +52,9 @@ export class DatabaseService {
       
       // Test connection
       await this.prisma.$queryRaw`SELECT 1`
-      console.log('✅ Database connected successfully')
+      console.log('[✓] Database connected successfully')
     } catch (error) {
-      console.error('❌ Database initialization failed:', error)
+      console.error(' Database initialization failed:', error)
       throw error
     }
   }

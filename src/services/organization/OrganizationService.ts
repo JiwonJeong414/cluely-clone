@@ -1,13 +1,33 @@
+/**
+ * Organization Service
+ * 
+ * Handles intelligent file organization using machine learning clustering
+ * and folder structure analysis. Provides functionality for analyzing files,
+ * creating organization plans, and executing file organization in Google Drive.
+ */
+
 import { DriveService } from '../drive/DriveService'
 import { DatabaseService } from '../database/DatabaseService'
 import type { FileWithEmbedding, FileCluster, OrganizationPlan, OrganizationResult } from '../../types'
 
 export class OrganizationService {
+  /**
+   * Create a new OrganizationService instance
+   * @param driveService - Drive service for file operations
+   * @param dbService - Database service for data persistence
+   */
   constructor(
     private driveService: DriveService,
     private dbService: DatabaseService
   ) {}
 
+  /**
+   * Analyze files for organization using various methods
+   * @param userId - The user's database ID
+   * @param options - Organization analysis options including method and clustering parameters
+   * @returns Promise<{ clusters: FileCluster[] }> - Analysis results with file clusters
+   * @throws {Error} If insufficient files are available for analysis
+   */
   async analyzeForOrganization(
     userId: string,
     options: {
@@ -22,7 +42,7 @@ export class OrganizationService {
       minClusterSize = 3
     } = options
 
-    console.log(`🎯 Starting ${method} organization analysis for user ${userId}`)
+    console.log(`Starting ${method} organization analysis for user ${userId}`)
 
     // Get files with embeddings
     const fileData = await this.getFileDataWithEmbeddings(userId)
@@ -31,7 +51,7 @@ export class OrganizationService {
       throw new Error(`Need at least 10 files for meaningful organization. Currently have ${fileData.length} files with embeddings.`)
     }
 
-    console.log(`📊 Analyzing ${fileData.length} files for organization`)
+    console.log(`Analyzing ${fileData.length} files for organization`)
 
     let clusters: FileCluster[] = []
 
@@ -49,10 +69,16 @@ export class OrganizationService {
         break
     }
 
-    console.log(`✅ Created ${clusters.length} organization clusters`)
+    console.log(`[✓] Created ${clusters.length} organization clusters`)
     return { clusters }
   }
 
+  /**
+   * Execute an organization plan by creating folders and moving files
+   * @param userId - The user's database ID
+   * @param plan - Organization plan with clusters to execute
+   * @returns Promise<OrganizationResult> - Results of the organization operation
+   */
   async executeOrganization(userId: string, plan: OrganizationPlan): Promise<OrganizationResult> {
     const result: OrganizationResult = {
       clustersCreated: 0,
@@ -71,16 +97,16 @@ export class OrganizationService {
         result.foldersCreated.push(folderName)
 
         // Move files to folder (using shortcuts to preserve originals)
-        console.log(`📦 Moving ${cluster.files.length} files to ${folderName}`)
+        console.log(`Moving ${cluster.files.length} files to ${folderName}`)
         for (const file of cluster.files) {
           try {
             await this.driveService.createShortcut(file.fileId, folderId, file.fileName)
             result.filesMoved++
-            console.log(`   ✅ Moved ${file.fileName}`)
+            console.log(`   [✓] Moved ${file.fileName}`)
           } catch (error) {
             const errorMsg = `Failed to move ${file.fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`
             result.errors.push(errorMsg)
-            console.error(`   ❌ ${errorMsg}`)
+            console.error(`    ${errorMsg}`)
           }
         }
 
@@ -102,13 +128,18 @@ export class OrganizationService {
       } catch (error) {
         const errorMsg = `Failed to process cluster ${cluster.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
         result.errors.push(errorMsg)
-        console.error(`❌ ${errorMsg}`)
+        console.error(`${errorMsg}`)
       }
     }
 
     return result
   }
 
+  /**
+   * Get file data with embeddings for organization analysis
+   * @param userId - The user's database ID
+   * @returns Promise<FileWithEmbedding[]> - Array of files with their embeddings and metadata
+   */
   private async getFileDataWithEmbeddings(userId: string): Promise<FileWithEmbedding[]> {
     const embeddings = await this.dbService.getDocumentEmbeddings(userId)
     
@@ -129,16 +160,23 @@ export class OrganizationService {
     })
 
     const result = Array.from(fileMap.values())
-    console.log(`✅ Found ${result.length} unique files with embeddings`)
+    console.log(`[✓] Found ${result.length} unique files with embeddings`)
     return result
   }
 
+  /**
+   * Organize files using K-means clustering based on content embeddings
+   * @param fileData - Array of files with embeddings
+   * @param k - Number of clusters to create
+   * @param minClusterSize - Minimum number of files required in a cluster
+   * @returns Promise<FileCluster[]> - Array of content-based file clusters
+   */
   private async organizeByKMeans(
     fileData: FileWithEmbedding[],
     k: number,
     minClusterSize: number
   ): Promise<FileCluster[]> {
-    console.log(`🧮 Running K-means clustering with k=${k}`)
+    console.log(`Running K-means clustering with k=${k}`)
 
     // Extract embeddings for clustering
     const embeddings = fileData.map(f => f.embedding)
@@ -154,7 +192,7 @@ export class OrganizationService {
         .map(item => item.file)
 
       if (clusterFiles.length < minClusterSize) {
-        console.log(`⚠️ Cluster ${i} too small (${clusterFiles.length} files), merging with others`)
+        console.log(`Cluster ${i} too small (${clusterFiles.length} files), merging with others`)
         continue
       }
 
@@ -177,12 +215,17 @@ export class OrganizationService {
       })
     }
 
-    console.log(`✅ Created ${fileClusters.length} content-based clusters`)
+    console.log(`[✓] Created ${fileClusters.length} content-based clusters`)
     return fileClusters
   }
 
+  /**
+   * Organize files based on their existing folder structure
+   * @param fileData - Array of files with embeddings
+   * @returns Promise<FileCluster[]> - Array of folder-based file clusters
+   */
   private async organizeByExistingStructure(fileData: FileWithEmbedding[]): Promise<FileCluster[]> {
-    console.log(`📁 Analyzing existing folder structure`)
+    console.log(`Analyzing existing folder structure`)
 
     // Group files by their current folder structure
     const folderGroups = new Map<string, FileWithEmbedding[]>()
@@ -219,10 +262,16 @@ export class OrganizationService {
       })
     }
 
-    console.log(`✅ Created ${clusters.length} folder-based clusters`)
+    console.log(`[✓] Created ${clusters.length} folder-based clusters`)
     return clusters
   }
 
+  /**
+   * Perform K-means clustering on embeddings
+   * @param embeddings - Array of embedding vectors
+   * @param k - Number of clusters to create
+   * @returns number[] - Array of cluster assignments for each embedding
+   */
   private kMeansClustering(embeddings: number[][], k: number): number[] {
     const numPoints = embeddings.length
     const dimensions = embeddings[0].length
@@ -277,14 +326,25 @@ export class OrganizationService {
       }
     }
 
-    console.log(`🔄 K-means converged after ${iterations} iterations`)
+    console.log(`K-means converged after ${iterations} iterations`)
     return assignments
   }
 
+  /**
+   * Calculate Euclidean distance between two vectors
+   * @param a - First vector
+   * @param b - Second vector
+   * @returns number - Euclidean distance between the vectors
+   */
   private euclideanDistance(a: number[], b: number[]): number {
     return Math.sqrt(a.reduce((sum, val, i) => sum + Math.pow(val - b[i], 2), 0))
   }
 
+  /**
+   * Analyze the theme and category of a cluster of files
+   * @param files - Array of files to analyze
+   * @returns { name: string, description: string, folderName: string, category: FileCluster['category'], keywords: string[] } - Theme analysis results
+   */
   private analyzeClusterTheme(files: FileWithEmbedding[]): {
     name: string
     description: string
@@ -361,6 +421,11 @@ export class OrganizationService {
     }
   }
 
+  /**
+   * Extract common words from file names for theme analysis
+   * @param fileNames - Array of file names to analyze
+   * @returns string[] - Array of common words found across file names
+   */
   private extractCommonWords(fileNames: string[]): string[] {
     const wordCount = new Map<string, number>()
     
@@ -382,12 +447,22 @@ export class OrganizationService {
       .slice(0, 3)
   }
 
+  /**
+   * Capitalize the first letter of each word in a string
+   * @param str - String to capitalize
+   * @returns string - String with capitalized words
+   */
   private capitalizeWords(str: string): string {
     return str.split(' ').map(word => 
       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
     ).join(' ')
   }
 
+  /**
+   * Get a color for a cluster based on its index
+   * @param index - Cluster index
+   * @returns string - Hex color code
+   */
   private getClusterColor(index: number): string {
     const colors = [
       '#3B82F6', '#EF4444', '#10B981', '#F59E0B',
@@ -396,6 +471,12 @@ export class OrganizationService {
     return colors[index % colors.length]
   }
 
+  /**
+   * Improve folder name based on current path and theme
+   * @param currentPath - Current folder path
+   * @param theme - Theme analysis results
+   * @returns string - Improved folder name
+   */
   private improveFolderName(currentPath: string, theme: any): string {
     if (currentPath === 'Root') return theme.folderName
     

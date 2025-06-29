@@ -1,5 +1,14 @@
+/**
+ * Electron API type definitions
+ * TypeScript declarations for Electron main process and renderer process communication
+ */
+
 import { contextBridge, ipcRenderer } from 'electron'
 
+/**
+ * Exposes Electron API methods to the renderer process
+ * Provides communication bridge between main and renderer processes
+ */
 contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   toggleWindow: () => ipcRenderer.invoke('toggle-window'),
@@ -18,7 +27,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 })
 
-// Type definitions
+/**
+ * Type definitions for the Electron API exposed to the renderer process
+ */
 export interface ElectronAPI {
   getAppVersion: () => Promise<string>
   toggleWindow: () => Promise<void>
@@ -33,6 +44,9 @@ export interface ElectronAPI {
   onScreenshotCaptured: (callback: (screenshot: string) => void) => void
 }
 
+/**
+ * Global type declaration to extend the Window interface
+ */
 declare global {
   interface Window {
     electronAPI: ElectronAPI

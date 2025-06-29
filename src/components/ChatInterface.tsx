@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
-import { getOpenAI, type ChatMessage } from '../api/openai'
+import { getOpenAI } from '../api/openai'
+import { type ChatMessage } from '../types'
 import { MapVisualization } from './MapVisualization'
 import { PlacesList } from './PlacesList'
 import { ChatInput } from './ChatInput'
@@ -190,7 +191,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
 
       {/* Messages */}
       {(streamingText || isStreaming || currentResponse || places.length > 0) && (
-        <div className="px-6 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar">
+        <div className="px-4 md:px-8 py-4 bg-black/20 border-t border-blue-500/10 max-h-96 overflow-y-auto custom-scrollbar">
           {(streamingText || isStreaming) && (
             <div className="bg-blue-500/5 border border-blue-400/10 rounded-lg px-6 py-4">
               <div className="text-sm leading-relaxed space-y-3 text-white/90">

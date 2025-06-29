@@ -43,7 +43,7 @@ export function useCalendar(user: User | null, googleConnection: GoogleConnectio
 
       if (result.success) {
         setCalendarEvents(result.events || [])
-        console.log(`📅 Loaded ${result.events?.length || 0} events for ${range}`)
+        console.log(`Loaded ${result.events?.length || 0} events for ${range}`)
       } else {
         console.error('Failed to load calendar events:', result.error)
         setCalendarEvents([])

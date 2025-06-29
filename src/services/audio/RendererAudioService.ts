@@ -1,3 +1,11 @@
+/**
+ * Renderer Audio Service
+ * 
+ * Handles audio capture in the renderer process using MediaRecorder and Web Audio API.
+ * Provides system audio capture functionality with fallback mechanisms for different
+ * browser capabilities. Supports both MediaRecorder and Web Audio API approaches.
+ */
+
 import type { AudioCaptureOptions, AudioCaptureResult } from '../../types'
 
 export class RendererAudioService {
@@ -18,6 +26,10 @@ export class RendererAudioService {
 
   private constructor() {}
 
+  /**
+   * Get the singleton instance of RendererAudioService
+   * @returns RendererAudioService - The singleton instance
+   */
   static getInstance(): RendererAudioService {
     if (!RendererAudioService.instance) {
       RendererAudioService.instance = new RendererAudioService()
@@ -25,21 +37,26 @@ export class RendererAudioService {
     return RendererAudioService.instance
   }
 
+  /**
+   * Start audio capture from system sources using MediaRecorder or Web Audio API
+   * @param options - Audio capture configuration options including duration limits
+   * @returns Promise<AudioCaptureResult> - Result with captured audio data or error details
+   */
   async startAudioCapture(options: AudioCaptureOptions = {}): Promise<AudioCaptureResult> {
     if (this.isCapturing) {
-      console.log('⚠️ Already capturing, returning early')
+      console.log('Already capturing, returning early')
       return { success: false, error: 'Audio capture already in progress' }
     }
 
     try {
-      console.log('🎤 Starting audio capture...')
+      console.log('Starting audio capture...')
       this.isCapturing = true
       this.audioChunks = []
       this.audioBuffer = []
 
       // Get system audio sources using desktopCapturer
       const sources = await (window as any).electronAPI?.getAvailableScreens?.() || []
-      console.log('📺 Available sources:', sources.length)
+      console.log('Available sources:', sources.length)
       
       if (sources.length === 0) {
         throw new Error('No screen sources found for audio capture')
@@ -47,7 +64,7 @@ export class RendererAudioService {
 
       // Get the first available screen source (which includes audio)
       const screenSource = sources[0]
-      console.log('🎯 Using source:', screenSource.name)
+      console.log('Using source:', screenSource.name)
 
       // Request screen capture with audio
       this.stream = await navigator.mediaDevices.getUserMedia({
@@ -80,19 +97,19 @@ export class RendererAudioService {
       try {
         mediaRecorderSuccess = await this.tryMediaRecorder()
       } catch (error) {
-        console.log('❌ MediaRecorder failed, trying Web Audio API fallback...')
+        console.log('MediaRecorder failed, trying Web Audio API fallback...')
       }
 
       // If MediaRecorder fails, use Web Audio API
       if (!mediaRecorderSuccess) {
-        console.log('🔄 Using Web Audio API fallback...')
+        console.log('Using Web Audio API fallback...')
         return await this.startWebAudioCapture(options)
       }
 
       return this.capturePromise!
 
     } catch (error) {
-      console.error('❌ Error starting audio capture:', error)
+      console.error('Error starting audio capture:', error)
       this.cleanup()
       return {
         success: false,
@@ -101,6 +118,10 @@ export class RendererAudioService {
     }
   }
 
+  /**
+   * Attempt to use MediaRecorder for audio capture
+   * @returns Promise<boolean> - True if MediaRecorder setup was successful
+   */
   private async tryMediaRecorder(): Promise<boolean> {
     // Fallback for MediaRecorder mime type
     let mimeType = 'audio/webm;codecs=opus'
@@ -117,34 +138,34 @@ export class RendererAudioService {
         ? new MediaRecorder(this.stream!, { mimeType })
         : new MediaRecorder(this.stream!)
     } catch (err) {
-      console.error('❌ Failed to create MediaRecorder:', err)
+      console.error('Failed to create MediaRecorder:', err)
       return false
     }
 
     this.capturePromise = new Promise((resolve, reject) => {
       this.mediaRecorder!.onstart = () => {
-        console.log('🎤 MediaRecorder started successfully')
+        console.log('MediaRecorder started successfully')
       }
 
       this.mediaRecorder!.ondataavailable = (event) => {
-        console.log('📦 Data available:', event.data.size, 'bytes')
+        console.log('Data available:', event.data.size, 'bytes')
         if (event.data.size > 0) {
           this.audioChunks.push(event.data)
         }
       }
 
       this.mediaRecorder!.onstop = async () => {
-        console.log('🛑 MediaRecorder stopped, processing data...')
+        console.log('MediaRecorder stopped, processing data...')
         try {
           if (this.audioChunks.length === 0) {
             throw new Error('No audio data captured')
           }
 
           const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' })
-          console.log('🎵 Audio blob size:', audioBlob.size, 'bytes')
+          console.log('Audio blob size:', audioBlob.size, 'bytes')
           
           const arrayBuffer = await audioBlob.arrayBuffer()
-          console.log('📊 ArrayBuffer size:', arrayBuffer.byteLength, 'bytes')
+          console.log('ArrayBuffer size:', arrayBuffer.byteLength, 'bytes')
           
           this.cleanup()
           
@@ -154,25 +175,25 @@ export class RendererAudioService {
             duration: audioBlob.size / 16000 // Rough estimate
           })
         } catch (error) {
-          console.error('❌ Error processing audio data:', error)
+          console.error('Error processing audio data:', error)
           this.cleanup()
           reject({ success: false, error: error instanceof Error ? error.message : 'Unknown error' })
         }
       }
 
       this.mediaRecorder!.onerror = (event) => {
-        console.error('❌ MediaRecorder error:', event)
+        console.error('MediaRecorder error:', event)
         this.cleanup()
         reject({ success: false, error: 'MediaRecorder error' })
       }
 
       // Start recording with a small timeslice to get data more frequently
-      console.log('▶️ Starting MediaRecorder...')
+      console.log('Starting MediaRecorder...')
       try {
         this.mediaRecorder!.start(1000) // Get data every second
         return true
       } catch (startError) {
-        console.error('❌ Failed to start MediaRecorder:', startError)
+        console.error('Failed to start MediaRecorder:', startError)
         return false
       }
     })
@@ -180,6 +201,11 @@ export class RendererAudioService {
     return true
   }
 
+  /**
+   * Start audio capture using Web Audio API as fallback
+   * @param options - Audio capture configuration options
+   * @returns Promise<AudioCaptureResult> - Result indicating success or failure
+   */
   private async startWebAudioCapture(options: AudioCaptureOptions): Promise<AudioCaptureResult> {
     try {
       // Create AudioContext
@@ -202,21 +228,21 @@ export class RendererAudioService {
         copy.set(inputData)
         this.audioBuffer.push(copy)
         
-        console.log('📊 Audio data captured:', inputData.length, 'samples')
+        console.log('Audio data captured:', inputData.length, 'samples')
       }
 
       // Connect the audio nodes
       this.audioSource.connect(this.audioProcessor)
       this.audioProcessor.connect(this.audioContext.destination)
 
-      console.log('✅ Web Audio API capture started')
+      console.log('[✓] Web Audio API capture started')
 
       // Set duration limit if specified
       if (options.duration) {
-        console.log(`⏰ Setting duration limit: ${options.duration} seconds`)
+        console.log(`Setting duration limit: ${options.duration} seconds`)
         this.stopTimeout = setTimeout(() => {
           if (this.isCapturing) {
-            console.log('⏰ Duration limit reached, stopping...')
+            console.log('Duration limit reached, stopping...')
             this.stopWebAudioCapture()
           }
         }, options.duration * 1000)
@@ -225,7 +251,7 @@ export class RendererAudioService {
       return { success: true }
 
     } catch (error) {
-      console.error('❌ Web Audio API capture failed:', error)
+      console.error('Web Audio API capture failed:', error)
       this.cleanup()
       return {
         success: false,
@@ -234,9 +260,13 @@ export class RendererAudioService {
     }
   }
 
+  /**
+   * Stop Web Audio API capture and convert audio data to WAV format
+   * @returns AudioCaptureResult - Result with WAV audio data or error
+   */
   private stopWebAudioCapture(): AudioCaptureResult {
     try {
-      console.log('🛑 Stopping Web Audio API capture...')
+      console.log('Stopping Web Audio API capture...')
       
       // Disconnect audio nodes
       if (this.audioProcessor) {
@@ -257,7 +287,7 @@ export class RendererAudioService {
       // Convert audio buffer to WAV format
       if (this.audioBuffer.length > 0) {
         const wavData = this.convertToWAV(this.audioBuffer)
-        console.log('🎵 WAV data created, size:', wavData.byteLength, 'bytes')
+        console.log('WAV data created, size:', wavData.byteLength, 'bytes')
         
         this.cleanup()
         
@@ -272,7 +302,7 @@ export class RendererAudioService {
       }
 
     } catch (error) {
-      console.error('❌ Error stopping Web Audio capture:', error)
+      console.error('Error stopping Web Audio capture:', error)
       this.cleanup()
       return {
         success: false,
@@ -281,6 +311,11 @@ export class RendererAudioService {
     }
   }
 
+  /**
+   * Convert Float32Array audio buffer to WAV format
+   * @param audioBuffer - Array of Float32Array audio data chunks
+   * @returns ArrayBuffer - WAV format audio data
+   */
   private convertToWAV(audioBuffer: Float32Array[]): ArrayBuffer {
     // Calculate total length
     const totalLength = audioBuffer.reduce((sum, buffer) => sum + buffer.length, 0)
@@ -327,14 +362,18 @@ export class RendererAudioService {
     return wavData
   }
 
+  /**
+   * Stop the current audio capture session
+   * @returns Promise<AudioCaptureResult> - Result with captured audio data or error
+   */
   async stopAudioCapture(): Promise<AudioCaptureResult> {
     if (!this.isCapturing) {
-      console.log('⚠️ Not capturing, returning early')
+      console.log('Not capturing, returning early')
       return { success: false, error: 'No audio capture in progress' }
     }
 
     try {
-      console.log('🛑 Stopping audio capture...')
+      console.log('Stopping audio capture...')
       
       // Clear timeout
       if (this.stopTimeout) {
@@ -353,7 +392,7 @@ export class RendererAudioService {
         return { success: false, error: 'No active capture method found' }
       }
     } catch (error) {
-      console.error('❌ Error stopping audio capture:', error)
+      console.error(' Error stopping audio capture:', error)
       this.cleanup()
       return {
         success: false,
@@ -362,17 +401,24 @@ export class RendererAudioService {
     }
   }
 
+  /**
+   * Check if audio capture is currently active
+   * @returns boolean - True if audio capture is in progress
+   */
   isCapturingAudio(): boolean {
     return this.isCapturing
   }
 
+  /**
+   * Clean up all audio capture resources and reset state
+   */
   private cleanup() {
     console.log('🧹 Cleaning up audio service...')
     this.isCapturing = false
     
     if (this.stream) {
       this.stream.getTracks().forEach(track => {
-        console.log('🛑 Stopping track during cleanup:', track.kind)
+        console.log('Stopping track during cleanup:', track.kind)
         track.stop()
       })
       this.stream = null
@@ -405,9 +451,12 @@ export class RendererAudioService {
     this.audioBuffer = []
   }
 
-  // Force cleanup method for emergency situations
+  /**
+   * Force cleanup method for emergency situations
+   * Immediately stops all audio capture and cleans up resources
+   */
   forceCleanup() {
-    console.log('🚨 Force cleaning up audio service...')
+    console.log('Force cleaning up audio service...')
     this.cleanup()
   }
 } 

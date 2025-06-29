@@ -16,7 +16,7 @@ export function setupCalendarHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('🗓️ Fetching calendar events...')
+      console.log('Fetching calendar events...')
       
       let events
       if (timeRange?.start && timeRange?.end) {
@@ -28,10 +28,10 @@ export function setupCalendarHandlers(
         events = await calendarService.getUpcomingEvents()
       }
       
-      console.log(`✅ Found ${events.length} calendar events`)
+      console.log(`[✓] Found ${events.length} calendar events`)
       return { success: true, events }
     } catch (error) {
-      console.error('❌ Calendar get events error:', error)
+      console.error('Calendar get events error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get events' 
@@ -47,14 +47,14 @@ export function setupCalendarHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('📅 Fetching today\'s events...')
+      console.log('Fetching today\'s events...')
       
       const events = await calendarService.getTodaysEvents()
       
-      console.log(`✅ Found ${events.length} events for today`)
+      console.log(`[✓] Found ${events.length} events for today`)
       return { success: true, events }
     } catch (error) {
-      console.error('❌ Calendar get today error:', error)
+      console.error('Calendar get today error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get today\'s events' 
@@ -70,14 +70,14 @@ export function setupCalendarHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('📅 Fetching this week\'s events...')
+      console.log('Fetching this week\'s events...')
       
       const events = await calendarService.getThisWeeksEvents()
       
-      console.log(`✅ Found ${events.length} events for this week`)
+      console.log(`[✓] Found ${events.length} events for this week`)
       return { success: true, events }
     } catch (error) {
-      console.error('❌ Calendar get week error:', error)
+      console.error('Calendar get week error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get week\'s events' 
@@ -93,14 +93,14 @@ export function setupCalendarHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('📅 Fetching next week\'s events...')
+      console.log('Fetching next week\'s events...')
       
       const events = await calendarService.getNextWeeksEvents()
       
-      console.log(`✅ Found ${events.length} events for next week`)
+      console.log(`[✓] Found ${events.length} events for next week`)
       return { success: true, events }
     } catch (error) {
-      console.error('❌ Calendar get next week error:', error)
+      console.error('Calendar get next week error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get next week\'s events' 
@@ -116,14 +116,14 @@ export function setupCalendarHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log(`🤖 Analyzing calendar for query: "${query}"`)
+      console.log(`Analyzing calendar for query: "${query}"`)
       
       const analysis = await calendarService.analyzeSchedule(query)
       
-      console.log(`✅ Calendar analysis completed: ${analysis.events.length} events, ${analysis.insights.length} insights`)
+      console.log(`[✓] Calendar analysis completed: ${analysis.events.length} events, ${analysis.insights.length} insights`)
       return { success: true, analysis }
     } catch (error) {
-      console.error('❌ Calendar analyze error:', error)
+      console.error('Calendar analyze error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to analyze calendar' 
@@ -139,14 +139,14 @@ export function setupCalendarHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log(`📋 Getting calendar context for query: "${query}"`)
+      console.log(`Getting calendar context for query: "${query}"`)
       
       const context = await calendarService.getCalendarContext(query)
       
-      console.log(`✅ Calendar context generated (${context.length} characters)`)
+      console.log(`[✓] Calendar context generated (${context.length} characters)`)
       return { success: true, context }
     } catch (error) {
-      console.error('❌ Calendar get context error:', error)
+      console.error('Calendar get context error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get calendar context' 
@@ -162,14 +162,14 @@ export function setupCalendarHandlers(
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log(`📅 Creating calendar event: "${eventData.summary}"`)
+      console.log(`Creating calendar event: "${eventData.summary}"`)
       
       const createdEvent = await calendarService.createEvent(eventData)
       
-      console.log(`✅ Calendar event created successfully: ${createdEvent.id}`)
+      console.log(`[✓] Calendar event created successfully: ${createdEvent.id}`)
       return { success: true, event: createdEvent }
     } catch (error) {
-      console.error('❌ Calendar create event error:', error)
+      console.error('Calendar create event error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to create calendar event' 

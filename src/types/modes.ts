@@ -1,6 +1,14 @@
+/**
+ * Application mode component prop definitions
+ * TypeScript interfaces for props passed to different mode components
+ */
+
 import type { User, GoogleConnection, CalendarEvent, Place, SyncProgress } from '../../electron/preload'
 import type { AppMode, CalendarRange } from './app'
 
+/**
+ * Props for the calendar mode component
+ */
 export interface CalendarModeProps {
   user: User
   googleConnection: GoogleConnection
@@ -26,6 +34,9 @@ export interface CalendarModeProps {
   setCurrentMode: (mode: AppMode) => void
 }
 
+/**
+ * Props for the cleanup mode component
+ */
 export interface CleanupModeProps {
   user: User
   googleConnection: GoogleConnection
@@ -34,6 +45,9 @@ export interface CleanupModeProps {
   handleDeleteFiles: (fileIds: string[]) => void
 }
 
+/**
+ * Props for the drive mode component
+ */
 export interface DriveModeProps {
   user: User
   googleConnection: GoogleConnection
@@ -46,6 +60,9 @@ export interface DriveModeProps {
   setCurrentMode: (mode: AppMode) => void
 }
 
+/**
+ * Props for the maps mode component
+ */
 export interface MapsModeProps {
   user: User
   googleConnection: GoogleConnection
@@ -58,6 +75,9 @@ export interface MapsModeProps {
   setCurrentMode: (mode: AppMode) => void
 }
 
+/**
+ * Props for the organize mode component
+ */
 export interface OrganizeModeProps {
   user: User
   googleConnection: GoogleConnection
@@ -66,6 +86,9 @@ export interface OrganizeModeProps {
   analyzeForOrganization: () => void
 }
 
+/**
+ * Props for the profile mode component
+ */
 export interface ProfileModeProps {
   user: User
   googleConnection: GoogleConnection
@@ -74,6 +97,9 @@ export interface ProfileModeProps {
   requestLocationPermission: () => Promise<{ lat: number; lng: number } | null>
 }
 
+/**
+ * Props for the mode renderer component that switches between different modes
+ */
 export interface ModeRendererProps {
   mode: AppMode
   user: User | null
@@ -131,6 +157,9 @@ export interface ModeRendererProps {
   setCurrentMode: (mode: AppMode) => void
 }
 
+/**
+ * Props for the authentication button component
+ */
 export interface AuthButtonProps {
   user: any
   googleConnection: any

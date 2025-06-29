@@ -1,3 +1,11 @@
+/**
+ * Google Docs Service
+ * 
+ * Handles Google Docs integration for creating and managing documents.
+ * Provides functionality for creating notes from various sources including
+ * screenshots, audio transcriptions, and conversations with AI analysis.
+ */
+
 import { google } from 'googleapis'
 import { AuthService } from '../auth/AuthService.js'
 import type { User, GoogleDoc, NoteContent } from '../../types'
@@ -11,6 +19,10 @@ export class GoogleDocsService {
     this.authService = AuthService.getInstance()
   }
 
+  /**
+   * Get the singleton instance of GoogleDocsService
+   * @returns GoogleDocsService - The singleton instance
+   */
   static getInstance(): GoogleDocsService {
     if (!GoogleDocsService.instance) {
       GoogleDocsService.instance = new GoogleDocsService()
@@ -18,6 +30,10 @@ export class GoogleDocsService {
     return GoogleDocsService.instance
   }
 
+  /**
+   * Initialize the Google Docs API client
+   * Sets up the docs API with OAuth2 authentication
+   */
   private initializeDocs() {
     const oauth2Client = this.authService.getOAuthClient()
     this.docs = google.docs({ version: 'v1', auth: oauth2Client })
@@ -25,6 +41,9 @@ export class GoogleDocsService {
 
   /**
    * Create a new Google Doc with the given content
+   * @param noteContent - Content structure including title, content, timestamp, and metadata
+   * @returns Promise<GoogleDoc> - The created Google Doc with metadata
+   * @throws {Error} If document creation fails
    */
   async createNote(noteContent: NoteContent): Promise<GoogleDoc> {
     if (!this.docs) this.initializeDocs()
@@ -38,7 +57,7 @@ export class GoogleDocsService {
       })
 
       const documentId = createResponse.data.documentId
-      console.log(`📝 Created Google Doc: ${documentId}`)
+      console.log(`[✓] Created Google Doc: ${documentId}`)
 
       // Format the content for Google Docs
       const formattedContent = this.formatContentForDocs(noteContent)
@@ -58,7 +77,7 @@ export class GoogleDocsService {
         fields: 'id,name,webViewLink,createdTime,modifiedTime'
       })
 
-      console.log(`✅ Note written to Google Docs: ${noteContent.title}`)
+      console.log(`[✓] Note written to Google Docs: ${noteContent.title}`)
 
       return {
         id: documentId,
@@ -76,6 +95,10 @@ export class GoogleDocsService {
 
   /**
    * Append content to an existing Google Doc
+   * @param documentId - The ID of the document to append to
+   * @param content - The content to append
+   * @returns Promise<void>
+   * @throws {Error} If content appending fails
    */
   async appendToNote(documentId: string, content: string): Promise<void> {
     if (!this.docs) this.initializeDocs()
@@ -106,7 +129,7 @@ export class GoogleDocsService {
         }
       })
 
-      console.log(`✅ Content appended to Google Doc: ${documentId}`)
+      console.log(`[✓] Content appended to Google Doc: ${documentId}`)
 
     } catch (error) {
       console.error('Error appending to Google Doc:', error)
@@ -116,6 +139,9 @@ export class GoogleDocsService {
 
   /**
    * List recent Google Docs
+   * @param limit - Maximum number of documents to return (default: 10)
+   * @returns Promise<GoogleDoc[]> - Array of recent Google Docs
+   * @throws {Error} If document listing fails
    */
   async listRecentDocs(limit: number = 10): Promise<GoogleDoc[]> {
     if (!this.docs) this.initializeDocs()
@@ -147,6 +173,9 @@ export class GoogleDocsService {
 
   /**
    * Get a specific Google Doc by ID
+   * @param documentId - The ID of the document to retrieve
+   * @returns Promise<GoogleDoc> - The Google Doc metadata
+   * @throws {Error} If document retrieval fails
    */
   async getDoc(documentId: string): Promise<GoogleDoc> {
     if (!this.docs) this.initializeDocs()
@@ -175,6 +204,8 @@ export class GoogleDocsService {
 
   /**
    * Format content for Google Docs API
+   * @param noteContent - Content structure to format
+   * @returns any[] - Array of Google Docs API requests
    */
   private formatContentForDocs(noteContent: NoteContent): any[] {
     const requests: any[] = []
@@ -264,6 +295,11 @@ export class GoogleDocsService {
 
   /**
    * Create a note from screenshot analysis
+   * @param title - Title for the screenshot note
+   * @param screenshotUrl - URL or path to the screenshot
+   * @param aiAnalysis - AI-generated analysis of the screenshot
+   * @param userQuestion - Optional user question that prompted the analysis
+   * @returns Promise<GoogleDoc> - The created Google Doc
    */
   async createScreenshotNote(
     title: string,
@@ -287,6 +323,11 @@ export class GoogleDocsService {
 
   /**
    * Create a note from audio capture
+   * @param title - Title for the audio note
+   * @param transcription - Transcribed text from the audio
+   * @param aiAnalysis - AI-generated analysis of the audio content
+   * @param audioDuration - Optional duration of the audio in seconds
+   * @returns Promise<GoogleDoc> - The created Google Doc
    */
   async createAudioNote(
     title: string,
@@ -311,6 +352,10 @@ export class GoogleDocsService {
 
   /**
    * Create a note from conversation
+   * @param title - Title for the conversation note
+   * @param conversation - The conversation text to record
+   * @param aiSummary - Optional AI-generated summary of the conversation
+   * @returns Promise<GoogleDoc> - The created Google Doc
    */
   async createConversationNote(
     title: string,

@@ -1,3 +1,11 @@
+/**
+ * Drive Service
+ * 
+ * Handles Google Drive integration for file management, synchronization,
+ * and content extraction. Provides functionality for listing files, extracting
+ * content, creating embeddings, and managing file organization.
+ */
+
 import { google } from 'googleapis'
 import { AuthService } from '../auth/AuthService.js'
 import { DatabaseService } from '../database/DatabaseService'
@@ -14,6 +22,10 @@ export class DriveService {
     this.db = DatabaseService.getInstance()
   }
 
+  /**
+   * Get the singleton instance of DriveService
+   * @returns DriveService - The singleton instance
+   */
   static getInstance(): DriveService {
     if (!DriveService.instance) {
       DriveService.instance = new DriveService()
@@ -21,11 +33,21 @@ export class DriveService {
     return DriveService.instance
   }
 
+  /**
+   * Initialize the Google Drive API client
+   * Sets up the drive API with OAuth2 authentication
+   */
   private initializeDrive() {
     const oauth2Client = this.authService.getOAuthClient()
     this.drive = google.drive({ version: 'v3', auth: oauth2Client })
   }
 
+  /**
+   * List files from Google Drive with optional filtering
+   * @param options - Query options including page size, ordering, and filters
+   * @returns Promise<DriveFile[]> - Array of drive files
+   * @throws {Error} If drive API call fails
+   */
   async listFiles(options: {
     pageSize?: number
     orderBy?: string
@@ -48,6 +70,13 @@ export class DriveService {
     }
   }
 
+  /**
+   * Get the content of a file from Google Drive
+   * Supports various file types including Google Docs, Sheets, and text files
+   * @param fileId - The Google Drive file ID
+   * @returns Promise<string> - The file content as text
+   * @throws {Error} If file content extraction fails or file type is unsupported
+   */
   async getFileContent(fileId: string): Promise<string> {
     if (!this.drive) this.initializeDrive()
 
@@ -91,6 +120,12 @@ export class DriveService {
     }
   }
 
+  /**
+   * Delete a file from Google Drive
+   * @param fileId - The Google Drive file ID to delete
+   * @returns Promise<void>
+   * @throws {Error} If file deletion fails
+   */
   async deleteFile(fileId: string): Promise<void> {
     if (!this.drive) this.initializeDrive()
 
@@ -102,6 +137,12 @@ export class DriveService {
     }
   }
 
+  /**
+   * Create a new folder in Google Drive
+   * @param name - The name of the folder to create
+   * @returns Promise<string> - The ID of the created folder
+   * @throws {Error} If folder creation fails
+   */
   async createFolder(name: string): Promise<string> {
     if (!this.drive) this.initializeDrive()
 
@@ -120,6 +161,13 @@ export class DriveService {
     }
   }
 
+  /**
+   * Move a file to a different folder in Google Drive
+   * @param fileId - The ID of the file to move
+   * @param folderId - The ID of the destination folder
+   * @returns Promise<void>
+   * @throws {Error} If file move operation fails
+   */
   async moveFileToFolder(fileId: string, folderId: string): Promise<void> {
     if (!this.drive) this.initializeDrive()
 
@@ -144,6 +192,14 @@ export class DriveService {
     }
   }
 
+  /**
+   * Create a shortcut to a file in a specified folder
+   * @param fileId - The ID of the target file
+   * @param folderId - The ID of the folder where the shortcut will be created
+   * @param fileName - The name for the shortcut
+   * @returns Promise<void>
+   * @throws {Error} If shortcut creation fails
+   */
   async createShortcut(fileId: string, folderId: string, fileName: string): Promise<void> {
     if (!this.drive) this.initializeDrive()
 
@@ -164,7 +220,14 @@ export class DriveService {
     }
   }
 
-  // ENHANCED SYNC METHOD - Replicates web app logic
+  /**
+   * Synchronize files from Google Drive with the local database
+   * Creates embeddings for new or updated files for search functionality
+   * @param onProgress - Optional callback for progress updates
+   * @param options - Sync configuration options
+   * @returns Promise<{ success: boolean, totalFiles: number, processedFiles: number, embeddingCount: number, skippedCount: number, errorCount: number, strategy: string, message: string }> - Sync results
+   * @throws {Error} If user is not authenticated or sync fails
+   */
   async syncFiles(
     onProgress?: (progress: SyncProgress) => void,
     options: SyncOptions = {}
@@ -247,11 +310,11 @@ export class DriveService {
       )
       filesToProcess = unprocessedFiles.slice(0, limit)
       
-      console.log(`📊 Recent files scan: ${totalFilesFound} total, ${processableFiles.length} processable, ${unprocessedFiles.length} unprocessed`)
+      console.log(`Recent files scan: ${totalFilesFound} total, ${processableFiles.length} processable, ${unprocessedFiles.length} unprocessed`)
       
       // If we don't have enough from recent files, try a broader targeted search
       if (filesToProcess.length < limit && filesToProcess.length < unprocessedFiles.length) {
-        console.log(`🔍 Not enough recent files, searching more broadly...`)
+        console.log(` Not enough recent files, searching more broadly...`)
         
         // Search for specific document types to be more targeted
         const docTypes = [
@@ -275,7 +338,7 @@ export class DriveService {
           )
           
           filesToProcess.push(...newUnprocessed.slice(0, limit - filesToProcess.length))
-          console.log(`   📄 Found ${newUnprocessed.length} new ${mimeType.split('.').pop()} files`)
+          console.log(`[✓] Found ${newUnprocessed.length} new ${mimeType.split('.').pop()} files`)
         }
       }
       
@@ -295,7 +358,7 @@ export class DriveService {
     }
 
     // Process the selected files
-    console.log(`🎯 Processing ${filesToProcess.length} selected files...`)
+    console.log(`Processing ${filesToProcess.length} selected files...`)
 
     for (let i = 0; i < filesToProcess.length; i++) {
       const file = filesToProcess[i]
@@ -335,18 +398,18 @@ export class DriveService {
           if (existingCount > 0) {
             // Note: You'll need to add this method to DatabaseService
             // await this.db.deleteDocumentEmbeddings(file.id, user.id)
-            console.log(`   🗑️ Would delete ${existingCount} existing embeddings for force reindex`)
+            console.log(`Would delete ${existingCount} existing embeddings for force reindex`)
           }
         }
 
         // Create embeddings using VectorService
         try {
-          console.log(`   📝 Extracting content from ${file.name}...`)
+          console.log(` Extracting content from ${file.name}...`)
           const content = await this.getFileContent(file.id)
           
           // More lenient content check - even metadata is useful for search
           if (content && content.trim().length > 20) {
-            console.log(`   🧠 Creating embeddings for ${file.name} (${content.length} chars)...`)
+            console.log(` Creating embeddings for ${file.name} (${content.length} chars)...`)
             
             // Import VectorService dynamically
             const VectorService = (await import('../vector/VectorService')).VectorService
@@ -360,19 +423,19 @@ export class DriveService {
             )
             
             embeddingCount++
-            console.log(`   ✅ Successfully processed ${file.name}`)
+            console.log(` [✓] Successfully processed ${file.name}`)
           } else {
-            console.log(`   ⚠️ Insufficient content in ${file.name} (${content?.length || 0} chars) - skipping`)
+            console.log(`Insufficient content in ${file.name} (${content?.length || 0} chars) - skipping`)
             skippedCount++
           }
         } catch (embeddingError) {
-          console.error(`   ❌ Failed to create embeddings for ${file.name}:`, embeddingError)
+          console.error(`Failed to create embeddings for ${file.name}:`, embeddingError)
           errorCount++
         }
 
         processedCount++
       } catch (error) {
-        console.error(`💥 ERROR processing file ${file.id} (${file.name}):`, error)
+        console.error(`ERROR processing file ${file.id} (${file.name}):`, error)
         errorCount++
       }
     }
@@ -414,7 +477,11 @@ export class DriveService {
     }
   }
 
-  // Enhanced file type checking
+  /**
+   * Check if a file type should be processed for embeddings
+   * @param mimeType - The MIME type of the file
+   * @returns boolean - True if the file type is supported for processing
+   */
   private shouldProcessFile(mimeType: string): boolean {
     const supportedTypes = [
       'application/vnd.google-apps.document',      // Google Docs - FULL TEXT
@@ -430,6 +497,13 @@ export class DriveService {
     return supportedTypes.includes(mimeType)
   }
 
+  /**
+   * Search documents using vector similarity
+   * @param query - Search query string
+   * @param limit - Maximum number of results to return (default: 5)
+   * @returns Promise<any[]> - Array of similar documents with relevance scores
+   * @throws {Error} If user is not authenticated
+   */
   async searchDocuments(query: string, limit: number = 5) {
     const user = this.authService.getCurrentUser()
     if (!user) throw new Error('User not authenticated')
@@ -439,15 +513,32 @@ export class DriveService {
     return vectorService.searchSimilarDocuments(user.id, query, limit)
   }
 
-  // Add these utility methods for better sync control
+  /**
+   * Force sync all files, reindexing existing files
+   * @param onProgress - Optional callback for progress updates
+   * @param limit - Maximum number of files to process (default: 10)
+   * @returns Promise<any> - Sync results
+   */
   async forceSyncFiles(onProgress?: (progress: SyncProgress) => void, limit: number = 10) {
     return this.syncFiles(onProgress, { limit, force: true, strategy: 'force_reindex' })
   }
 
+  /**
+   * Sync only new files that haven't been indexed yet
+   * @param onProgress - Optional callback for progress updates
+   * @param limit - Maximum number of files to process (default: 10)
+   * @returns Promise<any> - Sync results
+   */
   async syncNewFiles(onProgress?: (progress: SyncProgress) => void, limit: number = 10) {
     return this.syncFiles(onProgress, { limit, force: false, strategy: 'new_files_only' })
   }
 
+  /**
+   * Get detailed information about a specific file
+   * @param fileId - The Google Drive file ID
+   * @returns Promise<any> - File metadata
+   * @throws {Error} If file info retrieval fails
+   */
   async getFileInfo(fileId: string) {
     if (!this.drive) this.initializeDrive()
 
@@ -463,7 +554,11 @@ export class DriveService {
     }
   }
 
-  // Add method to get sync statistics
+  /**
+   * Get synchronization statistics for a user
+   * @param userId - The user's database ID
+   * @returns Promise<any> - Sync statistics including document counts and last sync time
+   */
   async getSyncStats(userId: string) {
     const embeddings = await this.db.getDocumentEmbeddings(userId)
     const documents = await this.db.getDocuments(userId)
@@ -480,6 +575,11 @@ export class DriveService {
     }
   }
 
+  /**
+   * Get the last Drive sync timestamp for a user
+   * @param userId - The user's database ID
+   * @returns Promise<Date | undefined> - Last sync timestamp or undefined if never synced
+   */
   private async getLastSyncTime(userId: string) {
     const connection = await this.db.getGoogleConnection(userId)
     return connection?.lastDriveSyncAt

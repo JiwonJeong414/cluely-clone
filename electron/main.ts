@@ -69,9 +69,9 @@ class WingmanApp {
       this.registerGlobalShortcuts()
       this.setupIpcHandlers()
       
-      console.log('✅ Initialization complete')
+      console.log('[✓] Initialization complete')
     } catch (error) {
-      console.error('❌ Failed to initialize app:', error)
+      console.error('Failed to initialize app:', error)
       app.quit()
     }
   }
@@ -83,12 +83,12 @@ class WingmanApp {
       // Initialize database service first
       const db = DatabaseService.getInstance()
       await db.initialize()
-      console.log('✅ Database service initialized')
+      console.log('[✓] Database service initialized')
       
       // Initialize auth service
       const auth = AuthService.getInstance()
       await auth.loadUserFromStorage()
-      console.log('✅ Auth service initialized')
+      console.log('[✓] Auth service initialized')
       
       // Initialize other services
       const drive = DriveService.getInstance()
@@ -100,7 +100,7 @@ class WingmanApp {
       
       // Check embedding model
       const hasEmbeddingModel = await vector.checkEmbeddingModel()
-      console.log(hasEmbeddingModel ? '✅ Vector service initialized with embedding model' : '⚠️ Vector service initialized but no embedding model found')
+      console.log(hasEmbeddingModel ? '[✓] Vector service initialized with embedding model' : '⚠️ Vector service initialized but no embedding model found')
       
       // Initialize organization service with dependencies
       const organization = new OrganizationService(drive, db)
@@ -117,9 +117,9 @@ class WingmanApp {
         docs
       }
       
-      console.log('✅ All services initialized successfully')
+      console.log('[✓] All services initialized successfully')
     } catch (error) {
-      console.error('❌ Failed to initialize services:', error)
+      console.error('Failed to initialize services:', error)
       throw error
     }
   }
@@ -272,7 +272,7 @@ class WingmanApp {
 
   // Shortcut handlers
   private handleTestShortcut = () => {
-    console.log('✅ Test shortcut working')
+    console.log('[✓] Test shortcut working')
     if (this.mainWindow) {
       this.mainWindow.webContents.send('shortcut-test-success')
     }
@@ -310,9 +310,9 @@ class WingmanApp {
         app.focus({ steal: true })
       }
       
-      console.log('✅ Drive mode toggle completed')
+      console.log('[✓]Drive mode toggle completed')
     } else {
-      console.error('❌ Main window not available')
+      console.error('Main window not available')
     }
   }
 

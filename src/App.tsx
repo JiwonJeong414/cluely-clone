@@ -162,25 +162,27 @@ function App() {
 
       {/* Chat Interface */}
       {currentMode === 'chat' && (
-        <ChatInterface
-          user={user}
-          googleConnection={googleConnection}
-          places={places}
-          setPlaces={setPlaces}
-          userLocation={userLocation}
-          setUserLocation={setUserLocation}
-          pendingCapture={pendingCapture}
-          setPendingCapture={setPendingCapture}
-          isSearchingMaps={isSearchingMaps}
-          setIsSearchingMaps={setIsSearchingMaps}
-          lastQueryWasLocation={lastQueryWasLocation}
-          setLastQueryWasLocation={setLastQueryWasLocation}
-          searchResults={searchResults}
-          handleCreateEventFromChat={handleCreateEventFromChat}
-          showDocsNotification={showDocsNotification}
-          requestLocationPermission={requestLocationPermission}
-          updateDimensions={updateDimensions}
-        />
+        <div className="max-w-2xl mx-auto w-full px-4">
+          <ChatInterface
+            user={user}
+            googleConnection={googleConnection}
+            places={places}
+            setPlaces={setPlaces}
+            userLocation={userLocation}
+            setUserLocation={setUserLocation}
+            pendingCapture={pendingCapture}
+            setPendingCapture={setPendingCapture}
+            isSearchingMaps={isSearchingMaps}
+            setIsSearchingMaps={setIsSearchingMaps}
+            lastQueryWasLocation={lastQueryWasLocation}
+            setLastQueryWasLocation={setLastQueryWasLocation}
+            searchResults={searchResults}
+            handleCreateEventFromChat={handleCreateEventFromChat}
+            showDocsNotification={showDocsNotification}
+            requestLocationPermission={requestLocationPermission}
+            updateDimensions={updateDimensions}
+          />
+        </div>
       )}
 
       {/* Mode Content */}

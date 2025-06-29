@@ -11,13 +11,13 @@ export function setupOrganizationHandlers(organizationService: OrganizationServi
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('🗂️ Starting file organization...')
+      console.log('Starting file organization...')
       const result = await organizationService.executeOrganization(user.id, plan)
       
-      console.log('✅ File organization completed:', result)
+      console.log('[✓] File organization completed:', result)
       return { success: true, result }
     } catch (error) {
-      console.error('❌ Drive organize files error:', error)
+      console.error('Drive organize files error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Organization failed' 
@@ -33,13 +33,13 @@ export function setupOrganizationHandlers(organizationService: OrganizationServi
         return { success: false, error: 'User not authenticated' }
       }
       
-      console.log('🔍 Analyzing files for organization...')
+      console.log('Analyzing files for organization...')
       const analysis = await organizationService.analyzeForOrganization(user.id, options)
       
-      console.log(`✅ Analysis completed: ${analysis.clusters.length} clusters found`)
+      console.log(`[✓] Analysis completed: ${analysis.clusters.length} clusters found`)
       return { success: true, analysis }
     } catch (error) {
-      console.error('❌ Drive analyze error:', error)
+      console.error('Drive analyze error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Analysis failed' 

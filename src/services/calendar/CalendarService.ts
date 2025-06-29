@@ -1,3 +1,11 @@
+/**
+ * Calendar Service
+ * 
+ * Handles Google Calendar integration for event management, scheduling analysis,
+ * and calendar insights. Provides functionality for fetching events, analyzing
+ * schedules, generating insights, and creating new calendar events.
+ */
+
 import { google } from 'googleapis'
 import { AuthService } from '../auth/AuthService'
 import { DatabaseService } from '../database/DatabaseService'
@@ -14,6 +22,10 @@ export class CalendarService {
     this.db = DatabaseService.getInstance()
   }
 
+  /**
+   * Get the singleton instance of CalendarService
+   * @returns CalendarService - The singleton instance
+   */
   static getInstance(): CalendarService {
     if (!CalendarService.instance) {
       CalendarService.instance = new CalendarService()
@@ -21,11 +33,23 @@ export class CalendarService {
     return CalendarService.instance
   }
 
+  /**
+   * Initialize the Google Calendar API client
+   * Sets up the calendar API with OAuth2 authentication
+   */
   private initializeCalendar() {
     const oauth2Client = this.authService.getOAuthClient()
     this.calendar = google.calendar({ version: 'v3', auth: oauth2Client })
   }
 
+  /**
+   * Get upcoming calendar events within a specified time range
+   * @param timeMin - Start time for the query (defaults to now)
+   * @param timeMax - End time for the query (defaults to 7 days from now)
+   * @param maxResults - Maximum number of events to return (default: 50)
+   * @returns Promise<CalendarEvent[]> - Array of calendar events
+   * @throws {Error} If calendar API call fails
+   */
   async getUpcomingEvents(
     timeMin?: Date,
     timeMax?: Date,
@@ -59,10 +83,17 @@ export class CalendarService {
     }
   }
 
+  /**
+   * Get calendar events for a specific date range
+   * @param startDate - Start date for the query
+   * @param endDate - End date for the query
+   * @returns Promise<CalendarEvent[]> - Array of calendar events in the date range
+   * @throws {Error} If calendar API call fails
+   */
   async getEventsForDateRange(startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
     if (!this.calendar) this.initializeCalendar()
 
-    console.log('📅 DEBUG: Fetching events from', startDate.toISOString(), 'to', endDate.toISOString())
+    console.log('DEBUG: Fetching events from', startDate.toISOString(), 'to', endDate.toISOString())
 
     try {
       const response = await this.calendar.events.list({
@@ -73,7 +104,7 @@ export class CalendarService {
         orderBy: 'startTime'
       })
 
-      console.log('📅 DEBUG: Raw Google Calendar response:', {
+      console.log('DEBUG: Raw Google Calendar response:', {
         itemsCount: response.data.items?.length || 0,
         items: response.data.items?.map((item: any) => ({
           id: item.id,
@@ -90,38 +121,46 @@ export class CalendarService {
       }
 
       const formattedEvents = response.data.items?.map(this.formatEvent) || []
-      console.log('📅 DEBUG: Formatted events:', formattedEvents.length)
+      console.log('DEBUG: Formatted events:', formattedEvents.length)
 
       return formattedEvents
     } catch (error) {
-      console.error('❌ ERROR: Calendar API call failed:', error)
+      console.error('ERROR: Calendar API call failed:', error)
       
       // Log more details about the error
       if (error && typeof error === 'object' && 'response' in error) {
         const apiError = error as any
-        console.error('❌ ERROR: Response status:', apiError.response.status)
-        console.error('❌ ERROR: Response data:', apiError.response.data)
+        console.error('ERROR: Response status:', apiError.response.status)
+        console.error('ERROR: Response data:', apiError.response.data)
       }
       
       throw error
     }
   }
 
+  /**
+   * Get all events scheduled for today
+   * @returns Promise<CalendarEvent[]> - Array of today's calendar events
+   */
   async getTodaysEvents(): Promise<CalendarEvent[]> {
     const today = new Date()
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
 
-    console.log('📅 DEBUG: Getting today\'s events')
+    console.log('DEBUG: Getting today\'s events')
     console.log('Start of day:', startOfDay.toISOString())
     console.log('End of day:', endOfDay.toISOString())
 
     const events = await this.getEventsForDateRange(startOfDay, endOfDay)
-    console.log(`📅 DEBUG: Found ${events.length} events for today`)
+    console.log(`DEBUG: Found ${events.length} events for today`)
     
     return events
   }
 
+  /**
+   * Get all events for the current week
+   * @returns Promise<CalendarEvent[]> - Array of this week's calendar events
+   */
   async getThisWeeksEvents(): Promise<CalendarEvent[]> {
     const now = new Date()
     const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay())
@@ -130,6 +169,10 @@ export class CalendarService {
     return this.getEventsForDateRange(startOfWeek, endOfWeek)
   }
 
+  /**
+   * Get all events for the next week
+   * @returns Promise<CalendarEvent[]> - Array of next week's calendar events
+   */
   async getNextWeeksEvents(): Promise<CalendarEvent[]> {
     const now = new Date()
     const nextWeekStart = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -138,6 +181,11 @@ export class CalendarService {
     return this.getEventsForDateRange(nextWeekStart, nextWeekEnd)
   }
 
+  /**
+   * Analyze calendar schedule based on a natural language query
+   * @param query - Natural language query describing the time period to analyze
+   * @returns Promise<{ events: CalendarEvent[], insights: CalendarInsight[], summary: string }> - Analysis results
+   */
   async analyzeSchedule(query: string): Promise<{
     events: CalendarEvent[]
     insights: CalendarInsight[]
@@ -156,6 +204,11 @@ export class CalendarService {
     return { events, insights, summary }
   }
 
+  /**
+   * Parse natural language time queries into date ranges
+   * @param query - Natural language query (e.g., "today", "this week", "next week")
+   * @returns { start: Date, end: Date } - Parsed date range
+   */
   private parseTimeQuery(query: string): { start: Date, end: Date } {
     const now = new Date()
     const lowerQuery = query.toLowerCase()
@@ -202,6 +255,12 @@ export class CalendarService {
     return { start, end }
   }
 
+  /**
+   * Generate insights from calendar events
+   * @param events - Array of calendar events to analyze
+   * @param query - Original query for context
+   * @returns CalendarInsight[] - Array of generated insights
+   */
   private generateInsights(events: CalendarEvent[], query: string): CalendarInsight[] {
     const insights: CalendarInsight[] = []
     const now = new Date()
@@ -268,6 +327,11 @@ export class CalendarService {
     return insights
   }
 
+  /**
+   * Find busy periods with back-to-back meetings
+   * @param events - Array of calendar events to analyze
+   * @returns Array<{ start: Date, end: Date, events: CalendarEvent[] }> - Busy periods with their events
+   */
   private findBusyPeriods(events: CalendarEvent[]): Array<{
     start: Date
     end: Date
@@ -309,6 +373,11 @@ export class CalendarService {
     return busyPeriods
   }
 
+  /**
+   * Find potential travel time issues between events
+   * @param events - Array of calendar events to analyze
+   * @returns Array<{ message: string, events: CalendarEvent[] }> - Travel time warnings
+   */
   private findTravelTimeIssues(events: CalendarEvent[]): Array<{
     message: string
     events: CalendarEvent[]
@@ -338,6 +407,11 @@ export class CalendarService {
     return warnings
   }
 
+  /**
+   * Find free time slots between events during work hours
+   * @param events - Array of calendar events to analyze
+   * @returns Array<{ start: Date, end: Date, duration: number }> - Free time slots
+   */
   private findFreeTime(events: CalendarEvent[]): Array<{
     start: Date
     end: Date
@@ -368,6 +442,13 @@ export class CalendarService {
     return freeSlots
   }
 
+  /**
+   * Create a summary of calendar events for a given time range
+   * @param events - Array of calendar events
+   * @param timeRange - Time range for the summary
+   * @param query - Original query for context
+   * @returns string - Formatted summary text
+   */
   private createScheduleSummary(events: CalendarEvent[], timeRange: { start: Date, end: Date }, query: string): string {
     if (events.length === 0) {
       return `You have no scheduled events in the requested time period.`
@@ -408,6 +489,11 @@ export class CalendarService {
     return summary
   }
 
+  /**
+   * Group events by day for summary generation
+   * @param events - Array of calendar events
+   * @returns { [date: string]: CalendarEvent[] } - Events grouped by date
+   */
   private groupEventsByDay(events: CalendarEvent[]): { [date: string]: CalendarEvent[] } {
     const grouped: { [date: string]: CalendarEvent[] } = {}
     
@@ -424,6 +510,11 @@ export class CalendarService {
     return grouped
   }
 
+  /**
+   * Format Google Calendar API event to internal CalendarEvent type
+   * @param googleEvent - Raw event from Google Calendar API
+   * @returns CalendarEvent - Formatted calendar event
+   */
   private formatEvent(googleEvent: any): CalendarEvent {
     return {
       id: googleEvent.id,
@@ -465,6 +556,11 @@ export class CalendarService {
     }
   }
 
+  /**
+   * Format a date to readable time string
+   * @param date - Date to format
+   * @returns string - Formatted time string (e.g., "2:30 PM")
+   */
   private formatTime(date: Date): string {
     return date.toLocaleTimeString('en-US', { 
       hour: 'numeric', 
@@ -473,6 +569,11 @@ export class CalendarService {
     })
   }
 
+  /**
+   * Format event time range for display
+   * @param event - Calendar event to format
+   * @returns string - Formatted time range (e.g., "2:30 PM - 3:30 PM")
+   */
   private formatEventTime(event: CalendarEvent): string {
     if (event.start.date) {
       return 'All day'
@@ -484,7 +585,11 @@ export class CalendarService {
     return `${this.formatTime(start)} - ${this.formatTime(end)}`
   }
 
-  // Quick access methods for common queries
+  /**
+   * Get calendar context for AI analysis
+   * @param query - Natural language query for context
+   * @returns Promise<string> - Formatted calendar context string
+   */
   async getCalendarContext(query: string): Promise<string> {
     const { events, insights, summary } = await this.analyzeSchedule(query)
     
@@ -510,7 +615,10 @@ export class CalendarService {
     return context
   }
 
-  // Also add this method to test the OAuth connection
+  /**
+   * Test the Google Calendar API connection
+   * @returns Promise<boolean> - True if connection is successful
+   */
   async testCalendarConnection(): Promise<boolean> {
     if (!this.calendar) this.initializeCalendar()
 
@@ -519,7 +627,7 @@ export class CalendarService {
       
       // Try to get calendar list first
       const calendarListResponse = await this.calendar.calendarList.list()
-      console.log('📋 Available calendars:', calendarListResponse.data.items?.map((cal: any) => ({
+      console.log('Available calendars:', calendarListResponse.data.items?.map((cal: any) => ({
         id: cal.id,
         summary: cal.summary,
         primary: cal.primary
@@ -529,15 +637,21 @@ export class CalendarService {
       const primaryCalendar = await this.calendar.calendars.get({
         calendarId: 'primary'
       })
-      console.log('🏠 Primary calendar:', primaryCalendar.data)
+      console.log('Primary calendar:', primaryCalendar.data)
 
       return true
     } catch (error) {
-      console.error('❌ Calendar connection test failed:', error)
+      console.error('Calendar connection test failed:', error)
       return false
     }
   }
 
+  /**
+   * Create a new calendar event
+   * @param eventData - Event creation request data
+   * @returns Promise<CalendarEvent> - The created calendar event
+   * @throws {Error} If event creation fails
+   */
   async createEvent(eventData: CreateEventRequest): Promise<CalendarEvent> {
     if (!this.calendar) this.initializeCalendar()
 
@@ -554,7 +668,7 @@ export class CalendarService {
         timeZone: eventData.start.timeZone || 'America/New_York'
       }
 
-      console.log('📅 Creating calendar event:', {
+      console.log('Creating calendar event:', {
         summary: event.summary,
         start: event.start,
         end: event.end,
@@ -570,7 +684,7 @@ export class CalendarService {
 
       const createdEvent = this.formatEvent(response.data)
       
-      console.log('✅ Calendar event created successfully:', {
+      console.log('[✓] Calendar event created successfully:', {
         id: createdEvent.id,
         summary: createdEvent.summary,
         htmlLink: createdEvent.htmlLink
@@ -584,7 +698,7 @@ export class CalendarService {
 
       return createdEvent
     } catch (error) {
-      console.error('❌ Error creating calendar event:', error)
+      console.error('Error creating calendar event:', error)
       throw error
     }
   }
