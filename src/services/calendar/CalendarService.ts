@@ -1,71 +1,7 @@
-// src/services/calendar/CalendarService.ts
 import { google } from 'googleapis'
 import { AuthService } from '../auth/AuthService'
 import { DatabaseService } from '../database/DatabaseService'
-
-export interface CalendarEvent {
-  id: string
-  summary: string
-  description?: string
-  start: {
-    dateTime?: string
-    date?: string
-    timeZone?: string
-  }
-  end: {
-    dateTime?: string
-    date?: string
-    timeZone?: string
-  }
-  location?: string
-  attendees?: Array<{
-    email: string
-    displayName?: string
-    responseStatus: 'needsAction' | 'declined' | 'tentative' | 'accepted'
-  }>
-  status: 'confirmed' | 'tentative' | 'cancelled'
-  creator?: {
-    email: string
-    displayName?: string
-  }
-  organizer?: {
-    email: string
-    displayName?: string
-  }
-  htmlLink?: string
-  conferenceData?: {
-    entryPoints?: Array<{
-      entryPointType: string
-      uri: string
-      label?: string
-    }>
-  }
-}
-
-export interface CalendarInsight {
-  type: 'upcoming_busy_period' | 'free_time' | 'travel_time' | 'meeting_prep' | 'conflict'
-  message: string
-  events: CalendarEvent[]
-  priority: 'low' | 'medium' | 'high'
-  actionable?: boolean
-}
-
-export interface CreateEventRequest {
-  summary: string
-  description?: string
-  start: {
-    dateTime?: string
-    date?: string
-    timeZone?: string
-  }
-  end: {
-    dateTime?: string
-    date?: string
-    timeZone?: string
-  }
-  location?: string
-  attendees?: string[] // Array of email addresses
-}
+import type { CalendarEvent, CalendarInsight, CreateEventRequest } from '../../types'
 
 export class CalendarService {
   private static instance: CalendarService
@@ -377,7 +313,7 @@ export class CalendarService {
     message: string
     events: CalendarEvent[]
   }> {
-    const warnings: Array<{ message: string, events: CalendarEvent[] }> = []
+    const warnings: Array<{ message: string; events: CalendarEvent[] }> = []
     
     for (let i = 0; i < events.length - 1; i++) {
       const currentEvent = events[i]
@@ -407,7 +343,7 @@ export class CalendarService {
     end: Date
     duration: number
   }> {
-    const freeSlots: Array<{ start: Date, end: Date, duration: number }> = []
+    const freeSlots: Array<{ start: Date; end: Date; duration: number }> = []
     const workStart = 9 // 9 AM
     const workEnd = 18 // 6 PM
     
@@ -613,7 +549,7 @@ export class CalendarService {
         start: eventData.start,
         end: eventData.end,
         location: eventData.location,
-        attendees: eventData.attendees?.map(email => ({ email })),
+        attendees: eventData.attendees?.map((email: string) => ({ email })),
         // Set default timezone if not provided
         timeZone: eventData.start.timeZone || 'America/New_York'
       }

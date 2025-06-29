@@ -1,5 +1,5 @@
 // Import types from electron preload
-import type { User, GoogleConnection, CalendarEvent, SyncProgress, Place } from '../../electron/preload'
+import type { User, GoogleConnection, CalendarEvent, SyncProgress, Place, CreateEventRequest, DriveFile } from '../../electron/preload'
 
 export type AppMode = 'chat' | 'drive' | 'cleanup' | 'organize' | 'calendar' | 'profile' | 'maps'
 export type CalendarRange = 'today' | 'week' | 'next-week'
@@ -49,4 +49,4 @@ export interface SyncOptions {
 }
 
 // Re-export types from electron preload for convenience
-export type { User, GoogleConnection, CalendarEvent, SyncProgress, Place }
+export type { User, GoogleConnection, CalendarEvent, SyncProgress, Place, CreateEventRequest, DriveFile }

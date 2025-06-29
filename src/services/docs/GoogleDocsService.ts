@@ -1,27 +1,6 @@
 import { google } from 'googleapis'
 import { AuthService } from '../auth/AuthService.js'
-import type { User } from '../auth/AuthService.js'
-
-export interface GoogleDoc {
-  id: string
-  name: string
-  webViewLink: string
-  createdTime: string
-  modifiedTime: string
-}
-
-export interface NoteContent {
-  title: string
-  content: string
-  timestamp: Date
-  type: 'screenshot' | 'audio' | 'conversation'
-  metadata?: {
-    screenshotUrl?: string
-    audioDuration?: number
-    transcription?: string
-    aiAnalysis?: string
-  }
-}
+import type { User, GoogleDoc, NoteContent } from '../../types'
 
 export class GoogleDocsService {
   private static instance: GoogleDocsService

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { APIProvider, Map, AdvancedMarker, InfoWindow } from '@vis.gl/react-google-maps'
-import type { Place } from '../services/maps/MapsService'
+import type { Place } from '../types'
 import type { MapVisualizationProps } from '../types/components'
 
 /** Interactive Google Maps component that displays places, user location, and provides detailed place information. */

@@ -1,41 +1,6 @@
-// src/services/organization/OrganizationService.ts
 import { DriveService } from '../drive/DriveService'
 import { DatabaseService } from '../database/DatabaseService'
-
-export interface FileWithEmbedding {
-  fileId: string
-  fileName: string
-  embedding: number[]
-  content?: string
-  metadata?: any
-  folderPath?: string
-}
-
-export interface FileCluster {
-  id: string
-  name: string
-  description: string
-  color: string
-  suggestedFolderName: string
-  category: 'work' | 'personal' | 'media' | 'documents' | 'archive' | 'mixed'
-  files: Array<{
-    fileId: string
-    fileName: string
-    confidence: number
-    keywords: string[]
-  }>
-}
-
-export interface OrganizationPlan {
-  clusters: FileCluster[]
-}
-
-export interface OrganizationResult {
-  clustersCreated: number
-  foldersCreated: string[]
-  filesMoved: number
-  errors: string[]
-}
+import type { FileWithEmbedding, FileCluster, OrganizationPlan, OrganizationResult } from '../../types'
 
 export class OrganizationService {
   constructor(

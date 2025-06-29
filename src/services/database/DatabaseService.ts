@@ -6,7 +6,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
-import type { User, GoogleConnection } from '../auth/AuthService.js'
+import type { User, GoogleConnection } from '../../types'
 import type {
   DocumentRecord,
   DocumentEmbedding,
@@ -42,12 +42,7 @@ export class DatabaseService {
   }
 
   /**
-   * Initialize the database connection and run any necessary migrations
-   * 
-   * This method establishes a connection to the SQLite database and
-   * verifies that the connection is working properly. It should be
-   * called before any other database operations.
-   * 
+   * Initialize the database connection and run migrations
    * @throws {Error} If database initialization fails
    */
   async initialize() {
@@ -66,11 +61,6 @@ export class DatabaseService {
 
   /**
    * Create or update a user in the database
-   * 
-   * This method handles user registration and profile updates. If a user
-   * with the given UID already exists, their information will be updated.
-   * Otherwise, a new user record will be created.
-   * 
    * @param userData - User information including UID, email, display name, and optional photo URL
    * @returns Promise<User> - The created or updated user object
    */
@@ -104,10 +94,6 @@ export class DatabaseService {
 
   /**
    * Retrieve all users from the database
-   * 
-   * Returns a list of all users ordered by their last update time,
-   * with the most recently updated users appearing first.
-   * 
    * @returns Promise<User[]> - Array of user objects
    */
   async getAllUsers(): Promise<User[]> {
@@ -126,11 +112,6 @@ export class DatabaseService {
 
   /**
    * Create or update Google connection for a user
-   * 
-   * Stores or updates the Google API connection information for a specific user,
-   * including access tokens and connection status. This is used for Google Drive
-   * and Calendar integration.
-   * 
    * @param userId - The user's database ID
    * @param connectionData - Google connection information including tokens and status
    * @returns Promise<GoogleConnection> - The created or updated connection object
@@ -158,7 +139,6 @@ export class DatabaseService {
 
   /**
    * Retrieve Google connection information for a user
-   * 
    * @param userId - The user's database ID
    * @returns Promise<GoogleConnection | null> - The connection object or null if not found
    */
@@ -170,7 +150,6 @@ export class DatabaseService {
 
   /**
    * Update the last Drive sync timestamp for a user
-   * 
    * @param userId - The user's database ID
    * @returns Promise<GoogleConnection> - The updated connection object
    */
@@ -186,7 +165,6 @@ export class DatabaseService {
 
   /**
    * Update the last Calendar sync timestamp for a user
-   * 
    * @param userId - The user's database ID
    * @returns Promise<GoogleConnection> - The updated connection object
    */
@@ -202,11 +180,6 @@ export class DatabaseService {
 
   /**
    * Create or update a document record in the database
-   * 
-   * Stores metadata about files from Google Drive, including file information
-   * like name, size, modification time, and web view links. If a document
-   * with the same drive ID already exists, it will be updated.
-   * 
    * @param docData - Document metadata including drive ID, name, type, and other properties
    * @returns Promise<DocumentRecord> - The created or updated document record
    */
@@ -248,10 +221,6 @@ export class DatabaseService {
 
   /**
    * Retrieve all documents for a specific user
-   * 
-   * Returns a list of all documents owned by the user, ordered by
-   * modification time with the most recently modified documents first.
-   * 
    * @param userId - The user's database ID
    * @returns Promise<DocumentRecord[]> - Array of document records
    */
@@ -275,11 +244,6 @@ export class DatabaseService {
 
   /**
    * Store document embedding for vector search
-   * 
-   * Saves text embeddings (vector representations) of document content
-   * for semantic search functionality. Each document can have multiple
-   * embeddings representing different chunks of content.
-   * 
    * @param embeddingData - Embedding information including content, vector, and metadata
    * @returns Promise<any> - The created embedding record
    */
@@ -300,10 +264,6 @@ export class DatabaseService {
 
   /**
    * Retrieve all document embeddings for a user
-   * 
-   * Returns all stored embeddings for the user's documents, ordered by
-   * creation time with the most recent embeddings first.
-   * 
    * @param userId - The user's database ID
    * @returns Promise<DocumentEmbedding[]> - Array of document embeddings
    */
@@ -327,12 +287,6 @@ export class DatabaseService {
 
   /**
    * Search for similar document embeddings using vector similarity
-   * 
-   * Performs a cosine similarity search against stored embeddings to find
-   * the most semantically similar documents. Since SQLite doesn't support
-   * native vector operations, this implementation fetches all embeddings
-   * and performs similarity calculations in memory.
-   * 
    * @param userId - The user's database ID
    * @param queryEmbedding - The query vector to search against
    * @param limit - Maximum number of results to return (default: 5)
@@ -355,11 +309,6 @@ export class DatabaseService {
 
   /**
    * Calculate cosine similarity between two vectors
-   * 
-   * Computes the cosine similarity between two vectors, which measures
-   * the cosine of the angle between them. Values range from -1 to 1,
-   * where 1 indicates identical vectors and 0 indicates orthogonal vectors.
-   * 
    * @param a - First vector
    * @param b - Second vector
    * @returns number - Cosine similarity score between -1 and 1
@@ -373,12 +322,6 @@ export class DatabaseService {
 
   /**
    * Get cleanup candidates for file organization
-   * 
-   * Analyzes a user's documents to identify files that might be candidates
-   * for cleanup or deletion. This includes small files, untitled documents,
-   * test/temporary files, and old files. The analysis uses various heuristics
-   * to categorize files and assign confidence levels.
-   * 
    * @param userId - The user's database ID
    * @param maxFiles - Maximum number of candidates to return (default: 50)
    * @returns Promise<CleanupCandidate[]> - Array of cleanup candidates with analysis
@@ -444,11 +387,6 @@ export class DatabaseService {
 
   /**
    * Analyze a file to determine if it's a cleanup candidate
-   * 
-   * Examines a single file's properties to categorize it for cleanup.
-   * Uses various heuristics including file size, name patterns, and age
-   * to determine the appropriate category and confidence level.
-   * 
    * @param file - The file record to analyze
    * @returns CleanupCandidate - Analysis result with category, reason, and confidence
    */
@@ -510,7 +448,6 @@ export class DatabaseService {
 
   /**
    * Check if a filename matches test/temporary file patterns
-   * 
    * @param filename - The filename to check
    * @returns boolean - True if the file appears to be a test/temporary file
    */
@@ -523,9 +460,6 @@ export class DatabaseService {
 
   /**
    * Format file size in human-readable format
-   * 
-   * Converts bytes to appropriate units (B, KB, MB) with proper formatting.
-   * 
    * @param bytes - File size in bytes
    * @returns string - Formatted file size string
    */
@@ -538,7 +472,6 @@ export class DatabaseService {
 
   /**
    * Create a new chat session
-   * 
    * @param userId - The user's database ID
    * @param summary - A summary description of the chat
    * @returns Promise<any> - The created chat record
@@ -556,10 +489,6 @@ export class DatabaseService {
 
   /**
    * Retrieve all chats for a user
-   * 
-   * Returns all chat sessions for the user, including the first message
-   * of each chat for preview purposes.
-   * 
    * @param userId - The user's database ID
    * @returns Promise<any[]> - Array of chat records with first message
    */
@@ -578,7 +507,6 @@ export class DatabaseService {
 
   /**
    * Save a message to a chat session
-   * 
    * @param chatId - The chat session ID
    * @param messageData - Message content and metadata
    * @returns Promise<any> - The created message record
@@ -598,10 +526,6 @@ export class DatabaseService {
 
   /**
    * Log cleanup activity for analytics
-   * 
-   * Records information about cleanup operations including the number of
-   * files deleted, requested, and any errors that occurred.
-   * 
    * @param userId - The user's database ID
    * @param activityData - Cleanup activity statistics
    * @returns Promise<any> - The created activity record
@@ -621,10 +545,6 @@ export class DatabaseService {
 
   /**
    * Log organization activity for analytics
-   * 
-   * Records information about file organization operations including
-   * clustering results, folder creation, and confidence scores.
-   * 
    * @param userId - The user's database ID
    * @param activityData - Organization activity statistics
    * @returns Promise<any> - The created activity record
@@ -646,9 +566,6 @@ export class DatabaseService {
 
   /**
    * Disconnect from the database
-   * 
-   * Properly closes the database connection to prevent resource leaks.
-   * Should be called when the application is shutting down.
    */
   async disconnect() {
     await this.prisma.$disconnect()

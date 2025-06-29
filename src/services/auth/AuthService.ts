@@ -1,25 +1,8 @@
-// src/services/auth/AuthService.ts
 import { shell } from 'electron'
 import { google } from 'googleapis'
 import * as crypto from 'crypto'
 import { DatabaseService } from '../database/DatabaseService'
-
-export interface User {
-  id: string
-  uid: string
-  email: string
-  displayName: string
-  photoURL?: string
-}
-
-export interface GoogleConnection {
-  isConnected: boolean
-  accessToken?: string
-  refreshToken?: string
-  connectedAt?: Date
-  lastDriveSyncAt?: Date
-  lastCalendarSyncAt?: Date
-}
+import type { User, GoogleConnection } from '../../types'
 
 export class AuthService {
   private static instance: AuthService

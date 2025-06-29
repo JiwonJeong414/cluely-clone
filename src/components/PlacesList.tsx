@@ -1,5 +1,5 @@
 import React from 'react'
-import type { Place } from '../services/maps/MapsService'
+import type { Place } from '../types'
 import type { PlacesListProps } from '../types/components'
 
 /** Compact list view of nearby places with ratings, distance, and quick access to place details. */

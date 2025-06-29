@@ -1,13 +1,5 @@
-// src/services/vector/VectorService.ts
 import { DatabaseService } from '../database/DatabaseService'
-
-export interface SearchResult {
-  fileId: string
-  fileName: string
-  content: string
-  similarity: number
-  metadata?: any
-}
+import type { SearchResult } from '../../types'
 
 export class VectorService {
   private static instance: VectorService

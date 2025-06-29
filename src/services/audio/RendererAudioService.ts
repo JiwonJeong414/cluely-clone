@@ -1,15 +1,4 @@
-export interface AudioCaptureOptions {
-  duration?: number // in seconds
-  sampleRate?: number
-  channels?: number
-}
-
-export interface AudioCaptureResult {
-  success: boolean
-  audioData?: ArrayBuffer
-  error?: string
-  duration?: number
-}
+import type { AudioCaptureOptions, AudioCaptureResult } from '../../types'
 
 export class RendererAudioService {
   private static instance: RendererAudioService

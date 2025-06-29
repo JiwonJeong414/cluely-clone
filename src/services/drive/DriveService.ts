@@ -1,34 +1,7 @@
-// src/services/drive/DriveService.ts - Enhanced with web app sync logic
 import { google } from 'googleapis'
 import { AuthService } from '../auth/AuthService.js'
-import type { User } from '../auth/AuthService.js'
 import { DatabaseService } from '../database/DatabaseService'
-
-export interface DriveFile {
-  id: string
-  name: string
-  mimeType: string
-  modifiedTime: string
-  size?: string
-  webViewLink?: string
-  ownedByMe?: boolean
-}
-
-export interface SyncProgress {
-  totalFiles: number
-  processedFiles: number
-  currentFile: string
-  embeddingsCreated: number
-  skipped: number
-  errors: number
-  isComplete: boolean
-}
-
-export interface SyncOptions {
-  limit?: number
-  force?: boolean
-  strategy?: 'new_files_only' | 'force_reindex' | 'targeted_search'
-}
+import type { User, DriveFile, SyncProgress, SyncOptions } from '../../types'
 
 export class DriveService {
   private static instance: DriveService
