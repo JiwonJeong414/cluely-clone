@@ -1,3 +1,5 @@
+![Cluely_Announcement_Twitter-R1](https://github.com/user-attachments/assets/51a28506-5947-448c-8dd7-f229315008c6)
+
 # Wingman
 
 Copyright (c) 2025 Jiwon Jeong
