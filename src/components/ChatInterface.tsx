@@ -5,7 +5,7 @@ import { MapVisualization } from './MapVisualization'
 import { PlacesList } from './PlacesList'
 import { ChatInput } from './ChatInput'
 import { WelcomeContent } from './WelcomeContent'
-import type { Message, PendingCapture } from '../types/app'
+import type { Message} from '../types/app'
 import type { User, GoogleConnection, Place } from '../../electron/preload'
 import type { ChatInterfaceProps } from '../types/components'
 
@@ -16,24 +16,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   places,
   setPlaces,
   userLocation,
-  setUserLocation,
   pendingCapture,
   setPendingCapture,
   isSearchingMaps,
   setIsSearchingMaps,
-  lastQueryWasLocation,
-  setLastQueryWasLocation,
-  searchResults,
-  handleCreateEventFromChat,
-  showDocsNotification,
-  requestLocationPermission,
   updateDimensions
 }) => {
   const [currentResponse, setCurrentResponse] = useState<Message | null>(null)
   const [streamingText, setStreamingText] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const sendMessage = async (
     userMessage: string, 
@@ -41,7 +33,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     driveContext?: any[], 
     calendarContext?: string
   ) => {
-    // Handle pending captures
+    // Check if we have a pending capture and combine with user message
     let finalMessage = userMessage
     let finalScreenshot = screenshotDataUrl
     let audioTranscription: string | null = null
@@ -55,21 +47,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         finalMessage = `${userMessage}\n\n[Audio transcription: "${pendingCapture.data}"]`
       }
       
+      // Clear the pending capture
       setPendingCapture(null)
     }
 
-    // Check if this is a "notes" request
+    // Check if this is a "notes" request early
     const isNotesRequest = finalMessage.toLowerCase().includes('notes') || finalMessage.toLowerCase().includes('save this')
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: finalMessage,
-      timestamp: new Date(),
-      hasScreenshot: !!finalScreenshot,
-      screenshotUrl: finalScreenshot,
-      driveContext: finalScreenshot ? undefined : driveContext
-    }
 
     setCurrentResponse(null)
     setStreamingText('')
@@ -77,14 +60,163 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setIsStreaming(true)
 
     try {
-      // Handle notes creation
+      // If this is a notes request, skip AI analysis and just create the note
       if (isNotesRequest && googleConnection.isConnected && window.electronAPI?.docs) {
-        // Create notes logic here
-        return
+        try {
+          if (finalScreenshot) {
+            // For screenshots, we still want AI analysis in the note
+            const openai = getOpenAI()
+            let screenshotAnalysis = ''
+            
+            // Get AI analysis of the screenshot
+            await openai.analyzeScreenshotStream(
+              finalScreenshot,
+              (chunk: string) => {
+                screenshotAnalysis += chunk
+              },
+              finalMessage
+            )
+            
+            // Create screenshot note with actual AI analysis
+            const title = `Screenshot Analysis - ${new Date().toLocaleDateString()}`
+            await window.electronAPI.docs.createScreenshotNote(
+              title,
+              finalScreenshot,
+              screenshotAnalysis,
+              finalMessage
+            )
+            console.log('Screenshot note created in Google Docs')
+          } else if (audioTranscription) {
+            // For audio, we want AI analysis of the transcription content
+            const openai = getOpenAI()
+            let audioAnalysis = ''
+            
+            // Get AI analysis of the audio transcription
+            const chatMessages: ChatMessage[] = [
+              {
+                role: 'system',
+                content: 'You are an AI assistant analyzing audio transcriptions. Provide insights, context, and analysis of the spoken content. Be helpful and actionable in your analysis.'
+              },
+              {
+                role: 'user',
+                content: `Please analyze this audio transcription and provide insights: "${audioTranscription}"`
+              }
+            ]
+            
+            await openai.sendMessageStream(chatMessages, (chunk: string) => {
+              audioAnalysis += chunk
+            })
+            
+            // Create audio note with actual AI analysis
+            const title = `Audio Note - ${new Date().toLocaleDateString()}`
+            await window.electronAPI.docs.createAudioNote(
+              title,
+              audioTranscription,
+              audioAnalysis,
+              0 // Duration not available
+            )
+            console.log('Audio note created in Google Docs')
+          } else {
+            // Create conversation note
+            const title = `Conversation Note - ${new Date().toLocaleDateString()}`
+            await window.electronAPI.docs.createConversationNote(
+              title,
+              `User: ${finalMessage}\n\nWingman: Note saved to Google Docs`,
+              "Note saved to Google Docs"
+            )
+            console.log('Conversation note created in Google Docs')
+          }
+          
+          // Show simple "Google notes created!" response
+          const assistantMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: 'Google notes created!',
+            timestamp: new Date(),
+            driveContext: finalScreenshot ? undefined : driveContext,
+            calendarContext
+          }
+          
+          setCurrentResponse(assistantMsg)
+          setStreamingText('')
+          setIsStreaming(false)
+          
+        } catch (error) {
+          console.error('Failed to create note:', error)
+          
+          const errorMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: 'Failed to create Google notes. Please try again.',
+            timestamp: new Date()
+          }
+          setCurrentResponse(errorMsg)
+          setStreamingText('')
+          setIsStreaming(false)
+        }
+        return // Exit early for notes requests
+      }
+
+      // Check if this is a drive search request
+      const isDriveSearch = googleConnection.isConnected && 
+        (finalMessage.toLowerCase().includes('drive') || 
+         finalMessage.toLowerCase().includes('document') || 
+         finalMessage.toLowerCase().includes('file') ||
+         finalMessage.toLowerCase().includes('swift') ||
+         finalMessage.toLowerCase().includes('search'))
+
+      // Check if this is a location/maps search request
+      const isLocationQuery = finalMessage.toLowerCase().includes('near me') || 
+        finalMessage.toLowerCase().includes('nearby') ||
+        finalMessage.toLowerCase().includes('coffee') ||
+        finalMessage.toLowerCase().includes('restaurant') ||
+        finalMessage.toLowerCase().includes('gas station') ||
+        finalMessage.toLowerCase().includes('hospital') ||
+        finalMessage.toLowerCase().includes('pharmacy') ||
+        finalMessage.toLowerCase().includes('bank') ||
+        finalMessage.toLowerCase().includes('atm') ||
+        finalMessage.toLowerCase().includes('hotel') ||
+        finalMessage.toLowerCase().includes('parking')
+
+      let driveSearchResults: any[] = []
+      
+      // Perform drive search if needed
+      if (isDriveSearch && window.electronAPI?.drive) {
+        try {
+          console.log('Searching drive for:', finalMessage)
+          const searchResult = await window.electronAPI.drive.search(finalMessage, 5)
+          if (searchResult.success && searchResult.results) {
+            driveSearchResults = searchResult.results
+            console.log(`[✓] Found ${driveSearchResults.length} relevant documents`)
+          }
+        } catch (error) {
+          console.error('Drive search error:', error)
+        }
+      }
+
+      // Perform maps search if needed
+      if (isLocationQuery && window.electronAPI?.maps) {
+        try {
+          console.log('Searching maps for:', finalMessage)
+          setIsSearchingMaps(true)
+          
+          const searchResult = await window.electronAPI.maps.search(finalMessage)
+          if (searchResult.success && searchResult.places) {
+            setPlaces(searchResult.places)
+            console.log(`[✓] Found ${searchResult.places.length} places`)
+          } else {
+            console.error('Maps search failed:', searchResult.error)
+          }
+        } catch (error) {
+          console.error('Maps search error:', error)
+        } finally {
+          setIsSearchingMaps(false)
+        }
       }
 
       const openai = getOpenAI()
       
+      // Build enhanced system prompt with calendar awareness
       const systemPrompt = `You are Wingman, a helpful AI assistant with access to Google Drive documents and Google Calendar. 
 
 Key capabilities:
@@ -101,6 +233,7 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
       let fullResponse = ''
       
       if (finalScreenshot) {
+        // Use vision API with calendar context
         await openai.analyzeScreenshotStream(
           finalScreenshot,
           (chunk: string) => {
@@ -111,16 +244,30 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
           finalMessage
         )
       } else {
+        // Regular text chat with enhanced context
         const chatMessages: ChatMessage[] = [
           {
             role: 'system',
             content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: finalMessage
           }
         ]
+
+        // Add drive context if we have search results
+        if (driveSearchResults.length > 0) {
+          const driveContext = `Here are relevant documents from your Google Drive:\n\n${driveSearchResults.map((doc, idx) => 
+            `${idx + 1}. ${doc.fileName} - ${doc.content?.substring(0, 200)}...`
+          ).join('\n\n')}`
+          
+          chatMessages.push({
+            role: 'user',
+            content: `Drive Context: ${driveContext}\n\nUser Question: ${finalMessage}`
+          })
+        } else {
+          chatMessages.push({
+            role: 'user',
+            content: finalMessage
+          })
+        }
         
         await openai.sendMessageStream(chatMessages, (chunk: string) => {
           fullResponse += chunk
@@ -134,8 +281,8 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
         role: 'assistant',
         content: fullResponse,
         timestamp: new Date(),
-        driveContext: finalScreenshot ? undefined : driveContext,
-        calendarContext
+        driveContext: finalScreenshot ? undefined : driveSearchResults,
+        calendarContext // Add calendar context to message
       }
 
       setCurrentResponse(assistantMsg)
@@ -155,29 +302,9 @@ Be conversational, helpful, and proactive in offering scheduling and productivit
     } finally {
       setIsLoading(false)
       setTimeout(() => {
-        inputRef.current?.focus()
         updateDimensions()
       }, 200)
     }
-  }
-
-  const handleAudioProcessed = async (transcription: string) => {
-    setPendingCapture({
-      type: 'audio',
-      data: transcription,
-      timestamp: new Date()
-    })
-    
-    const audioMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: `[Audio captured: "${transcription}"]`,
-      timestamp: new Date()
-    }
-    
-    setCurrentResponse(audioMessage)
-    setStreamingText('')
-    setIsStreaming(false)
   }
 
   return (

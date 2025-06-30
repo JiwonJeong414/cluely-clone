@@ -24,6 +24,7 @@ export function setupMapsHandlers(mapsService: MapsService) {
               
               console.log('[✓] Geolocation supported, requesting position...');
               
+              // Try with low accuracy first (faster)
               navigator.geolocation.getCurrentPosition(
                 (position) => {
                   console.log('[✓] Location obtained:', position.coords);
@@ -33,30 +34,47 @@ export function setupMapsHandlers(mapsService: MapsService) {
                   });
                 },
                 (error) => {
-                  console.error('Geolocation error:', error);
-                  console.error('Error code:', error.code);
-                  console.error('Error message:', error.message);
+                  console.error('Low accuracy geolocation failed:', error);
                   
-                  let errorMessage = 'Failed to get location: ';
-                  switch(error.code) {
-                    case 1:
-                      errorMessage += 'Location permission denied. Please enable location access in your browser settings.';
-                      break;
-                    case 2:
-                      errorMessage += 'Location unavailable. Please check your GPS or internet connection.';
-                      break;
-                    case 3:
-                      errorMessage += 'Location request timed out. Please try again.';
-                      break;
-                    default:
-                      errorMessage += error.message;
-                  }
-                  
-                  reject(new Error(errorMessage));
+                  // Fallback to high accuracy if low accuracy fails
+                  navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                      console.log('[✓] High accuracy location obtained:', position.coords);
+                      resolve({ 
+                        lat: position.coords.latitude, 
+                        lng: position.coords.longitude 
+                      });
+                    },
+                    (fallbackError) => {
+                      console.error('High accuracy geolocation also failed:', fallbackError);
+                      
+                      let errorMessage = 'Failed to get location: ';
+                      switch(fallbackError.code) {
+                        case 1:
+                          errorMessage += 'Location permission denied. Please enable location access in your browser settings.';
+                          break;
+                        case 2:
+                          errorMessage += 'Location unavailable. Please check your GPS or internet connection.';
+                          break;
+                        case 3:
+                          errorMessage += 'Location request timed out. Please try again.';
+                          break;
+                        default:
+                          errorMessage += fallbackError.message;
+                      }
+                      
+                      reject(new Error(errorMessage));
+                    },
+                    { 
+                      enableHighAccuracy: true, 
+                      timeout: 8000,
+                      maximumAge: 300000
+                    }
+                  );
                 },
                 { 
-                  enableHighAccuracy: true, 
-                  timeout: 15000,
+                  enableHighAccuracy: false, 
+                  timeout: 5000,
                   maximumAge: 300000
                 }
               );
@@ -113,6 +131,7 @@ export function setupMapsHandlers(mapsService: MapsService) {
           
           console.log('[✓] Requesting geolocation...');
           
+          // Try with low accuracy first (faster)
           navigator.geolocation.getCurrentPosition(
             (position) => {
               console.log('[✓] Got location successfully:', {
@@ -127,31 +146,52 @@ export function setupMapsHandlers(mapsService: MapsService) {
               });
             },
             (error) => {
-              console.error('Geolocation failed in renderer:', {
-                code: error.code,
-                message: error.message
-              });
+              console.error('Low accuracy geolocation failed:', error);
               
-              let errorMessage = 'Location access failed: ';
-              switch(error.code) {
-                case 1:
-                  errorMessage += 'Permission denied. Please allow location access and try again.';
-                  break;
-                case 2:
-                  errorMessage += 'Position unavailable. Check GPS/internet connection.';
-                  break;
-                case 3:
-                  errorMessage += 'Request timed out. Please try again.';
-                  break;
-                default:
-                  errorMessage += error.message || 'Unknown error';
-              }
-              
-              reject(new Error(errorMessage));
+              // Fallback to high accuracy if low accuracy fails
+              navigator.geolocation.getCurrentPosition(
+                (position) => {
+                  console.log('[✓] High accuracy location obtained:', {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                  });
+                  resolve({ 
+                    lat: position.coords.latitude, 
+                    lng: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                  });
+                },
+                (fallbackError) => {
+                  console.error('High accuracy geolocation also failed:', fallbackError);
+                  
+                  let errorMessage = 'Location access failed: ';
+                  switch(fallbackError.code) {
+                    case 1:
+                      errorMessage += 'Permission denied. Please allow location access and try again.';
+                      break;
+                    case 2:
+                      errorMessage += 'Position unavailable. Check GPS/internet connection.';
+                      break;
+                    case 3:
+                      errorMessage += 'Request timed out. Please try again.';
+                      break;
+                    default:
+                      errorMessage += fallbackError.message || 'Unknown error';
+                  }
+                  
+                  reject(new Error(errorMessage));
+                },
+                { 
+                  enableHighAccuracy: true,
+                  timeout: 8000,
+                  maximumAge: 600000
+                }
+              );
             },
             { 
               enableHighAccuracy: false,
-              timeout: 10000,
+              timeout: 5000,
               maximumAge: 600000
             }
           );

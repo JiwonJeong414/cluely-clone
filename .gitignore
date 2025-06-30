@@ -33,3 +33,5 @@ Thumbs.db
 # Misc
 coverage/ 
 /generated/prisma
+
+CHAT_FEATURE_TEACHING_SCRIPT.md

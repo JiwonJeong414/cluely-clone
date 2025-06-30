@@ -293,8 +293,7 @@ export class DatabaseService {
    * @returns Promise<Array<DocumentEmbedding & { similarity: number }>> - Similar embeddings with similarity scores
    */
   async searchEmbeddings(userId: string, queryEmbedding: number[], limit: number = 5) {
-    // Since SQLite doesn't have native vector operations, we'll fetch all embeddings
-    // and do similarity search in memory (for production, consider using a vector database)
+    // Maybe use Pinecone (for vector database)
     const embeddings = await this.getDocumentEmbeddings(userId)
     
     const similarities = embeddings.map(embedding => {

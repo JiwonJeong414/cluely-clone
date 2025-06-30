@@ -50,17 +50,10 @@ export interface ChatInterfaceProps {
   places: Place[]
   setPlaces: (places: Place[]) => void
   userLocation: { lat: number; lng: number } | null
-  setUserLocation: (location: { lat: number; lng: number } | null) => void
   pendingCapture: PendingCapture | null
   setPendingCapture: (capture: PendingCapture | null) => void
   isSearchingMaps: boolean
   setIsSearchingMaps: (searching: boolean) => void
-  lastQueryWasLocation: boolean
-  setLastQueryWasLocation: (was: boolean) => void
-  searchResults: any[]
-  handleCreateEventFromChat: (eventData: any, originalMessage: string) => Promise<void>
-  showDocsNotification: (type: 'success' | 'error', message: string) => void
-  requestLocationPermission: () => Promise<{ lat: number; lng: number } | null>
   updateDimensions: () => void
 }
 

@@ -11,7 +11,6 @@ import { useDrive } from './hooks/useDrive'
 import { useMaps } from './hooks/useMaps'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { usePendingCaptures } from './hooks/usePendingCaptures'
-import type { AppMode } from './types/app'
 
 declare module 'react' {
   interface CSSProperties {
@@ -29,7 +28,6 @@ function App() {
     currentMode,
     setCurrentMode,
     isDragging,
-    setIsDragging,
     updateDimensions,
     handleMouseDown
   } = useApp(contentRef)
@@ -169,17 +167,10 @@ function App() {
             places={places}
             setPlaces={setPlaces}
             userLocation={userLocation}
-            setUserLocation={setUserLocation}
             pendingCapture={pendingCapture}
             setPendingCapture={setPendingCapture}
             isSearchingMaps={isSearchingMaps}
             setIsSearchingMaps={setIsSearchingMaps}
-            lastQueryWasLocation={lastQueryWasLocation}
-            setLastQueryWasLocation={setLastQueryWasLocation}
-            searchResults={searchResults}
-            handleCreateEventFromChat={handleCreateEventFromChat}
-            showDocsNotification={showDocsNotification}
-            requestLocationPermission={requestLocationPermission}
             updateDimensions={updateDimensions}
           />
         </div>

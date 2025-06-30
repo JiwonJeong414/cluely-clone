@@ -20,7 +20,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }
 
   const handleAudioProcessed = (transcription: string) => {
-    // Handle audio transcription
+    // Handle audio transcription 
+    // Just a debug transcription 
+    // TODO: I WILL DELETE THIS LATER
     console.log('Audio transcribed:', transcription)
   }
 
