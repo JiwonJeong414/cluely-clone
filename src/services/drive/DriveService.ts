@@ -396,7 +396,6 @@ export class DriveService {
           // In force mode, delete existing embeddings first
           const existingCount = existingEmbeddings.filter(e => e.fileId === file.id).length
           if (existingCount > 0) {
-            // Note: You'll need to add this method to DatabaseService
             // await this.db.deleteDocumentEmbeddings(file.id, user.id)
             console.log(`Would delete ${existingCount} existing embeddings for force reindex`)
           }
