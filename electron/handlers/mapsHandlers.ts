@@ -5,7 +5,11 @@ export function setupMapsHandlers(mapsService: MapsService) {
   // Search nearby places
   ipcMain.handle('maps-search', async (event, query: string, options?: any) => {
     try {
-      console.log(`🗺️ Searching maps for: "${query}"`)
+      if (!mapsService) {
+        return { success: false, error: 'Maps service not available' }
+      }
+      
+      console.log(`Searching maps for: "${query}"`)
       
       // Get location from renderer process if not provided
       let location = options?.location
@@ -22,12 +26,11 @@ export function setupMapsHandlers(mapsService: MapsService) {
                 return;
               }
               
-              console.log('[✓] Geolocation supported, requesting position...');
+              console.log('Geolocation supported, requesting position...');
               
-              // Try with low accuracy first (faster)
               navigator.geolocation.getCurrentPosition(
                 (position) => {
-                  console.log('[✓] Location obtained:', position.coords);
+                  console.log('Location obtained:', position.coords);
                   resolve({ 
                     lat: position.coords.latitude, 
                     lng: position.coords.longitude 
@@ -39,7 +42,7 @@ export function setupMapsHandlers(mapsService: MapsService) {
                   // Fallback to high accuracy if low accuracy fails
                   navigator.geolocation.getCurrentPosition(
                     (position) => {
-                      console.log('[✓] High accuracy location obtained:', position.coords);
+                      console.log('High accuracy location obtained:', position.coords);
                       resolve({ 
                         lat: position.coords.latitude, 
                         lng: position.coords.longitude 
@@ -50,13 +53,13 @@ export function setupMapsHandlers(mapsService: MapsService) {
                       
                       let errorMessage = 'Failed to get location: ';
                       switch(fallbackError.code) {
-                        case 1:
+                        case 1: // PERMISSION_DENIED
                           errorMessage += 'Location permission denied. Please enable location access in your browser settings.';
                           break;
-                        case 2:
+                        case 2: // POSITION_UNAVAILABLE
                           errorMessage += 'Location unavailable. Please check your GPS or internet connection.';
                           break;
-                        case 3:
+                        case 3: // TIMEOUT
                           errorMessage += 'Location request timed out. Please try again.';
                           break;
                         default:
@@ -73,19 +76,20 @@ export function setupMapsHandlers(mapsService: MapsService) {
                   );
                 },
                 { 
-                  enableHighAccuracy: false, 
-                  timeout: 5000,
-                  maximumAge: 300000
+                  enableHighAccuracy: false, // Use lower accuracy first for speed
+                  timeout: 10000, // Reduced timeout for faster response
+                  maximumAge: 300000 // Allow cached location up to 5 minutes old
                 }
               );
             });
           `)
           
           location = locationResult
-          console.log('[✓] Got location from renderer:', location)
+          console.log('Got location from renderer:', location)
         } catch (locationError) {
           console.error('Failed to get location:', locationError)
           
+          // Return more helpful error message
           return { 
             success: false, 
             error: `Location access required for maps search. ${locationError instanceof Error ? locationError.message : 'Please enable location access and try again.'}` 
@@ -103,7 +107,7 @@ export function setupMapsHandlers(mapsService: MapsService) {
       const searchOptions = { ...options, location }
       const places = await mapsService.searchNearby(query, searchOptions)
       
-      console.log(`[✓] Found ${places.length} places`)
+      console.log(`Found ${places.length} places`)
       return { success: true, places }
     } catch (error) {
       console.error('Maps search error:', error)
@@ -129,12 +133,12 @@ export function setupMapsHandlers(mapsService: MapsService) {
             return;
           }
           
-          console.log('[✓] Requesting geolocation...');
+          console.log('Requesting geolocation...');
           
-          // Try with low accuracy first (faster)
+          // First try to get cached position quickly
           navigator.geolocation.getCurrentPosition(
             (position) => {
-              console.log('[✓] Got location successfully:', {
+              console.log('Got location successfully:', {
                 lat: position.coords.latitude,
                 lng: position.coords.longitude,
                 accuracy: position.coords.accuracy
@@ -151,7 +155,7 @@ export function setupMapsHandlers(mapsService: MapsService) {
               // Fallback to high accuracy if low accuracy fails
               navigator.geolocation.getCurrentPosition(
                 (position) => {
-                  console.log('[✓] High accuracy location obtained:', {
+                  console.log('High accuracy location obtained:', {
                     lat: position.coords.latitude,
                     lng: position.coords.longitude,
                     accuracy: position.coords.accuracy
@@ -190,15 +194,15 @@ export function setupMapsHandlers(mapsService: MapsService) {
               );
             },
             { 
-              enableHighAccuracy: false,
-              timeout: 5000,
-              maximumAge: 600000
+              enableHighAccuracy: false, // Try with lower accuracy first for speed
+              timeout: 10000,
+              maximumAge: 600000 // Allow cached location up to 10 minutes old
             }
           );
         });
       `)
       
-      console.log('[✓] Got location:', location)
+      console.log('Got location:', location)
       return { success: true, location }
     } catch (error) {
       console.error('Get location error:', error)
