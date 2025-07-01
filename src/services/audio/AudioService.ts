@@ -47,7 +47,7 @@ export class AudioService {
 
     try {
       this.isCapturing = true
-      console.log('🎤 Starting audio capture in main process...')
+      console.log('Starting audio capture in main process...')
 
       // Get system audio sources
       const sources = await desktopCapturer.getSources({

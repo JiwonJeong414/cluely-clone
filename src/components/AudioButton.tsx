@@ -14,7 +14,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
       setStatus('Starting recording...')
       setIsRecording(true)
 
-      // Get user media with microphone
+      // Asks the user for mic access
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -23,7 +23,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
         } 
       })
 
-      // Create MediaRecorder
+      // Set up a recorder usingthe mic stream
       const recorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
           ? 'audio/webm;codecs=opus' 
@@ -53,7 +53,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({ onAudioProcessed, clas
               // Only transcribe the audio, don't send to OpenAI for analysis
               const result = await window.electronAPI.audio.transcribeFromBase64(
                 base64Data, 
-                'audio/webm'
+                'audio/webm' 
               )
               
               if (result && 'text' in result) {

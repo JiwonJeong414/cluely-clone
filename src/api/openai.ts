@@ -1,4 +1,4 @@
-import { ChatMessage, VisionMessage } from '../types'
+import { ChatMessage } from '../types'
 
 /**
  * OpenAI API Service

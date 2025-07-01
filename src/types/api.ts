@@ -4,27 +4,17 @@
 
 /**
  * Represents a chat message with role and content
- * Content can be either a string or an array of text/image content
+ *
+ * NOTE: This type is used for communicating with the OpenAI API (and similar LLM APIs).
+ * It supports multimodal content (text and images) and matches the API's expected format.
+ *
+ * This is DIFFERENT from Message in src/types/app.ts, which is used for the application's
+ * UI and chat history, and includes additional metadata for frontend rendering.
+ * Do not confuse or interchange these types—they serve different purposes.
  */
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string | Array<{
-    type: 'text' | 'image_url'
-    text?: string
-    image_url?: {
-      url: string
-      detail?: 'low' | 'high' | 'auto'
-    }
-  }>
-}
-
-/**
- * Represents a vision message specifically for image analysis
- * Content must be an array of text/image content
- */
-export interface VisionMessage {
-  role: 'user' | 'assistant' | 'system'
-  content: Array<{
     type: 'text' | 'image_url'
     text?: string
     image_url?: {

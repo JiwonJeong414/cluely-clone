@@ -18,7 +18,7 @@ export interface AppHeaderProps {
   isDragging: boolean
   handleMouseDown: (e: React.MouseEvent) => void
   appVersion: string
-  pendingCapture: any
+  pendingCapture: PendingCapture | null
   onSignIn: () => Promise<void>
   onSignOut: () => Promise<void>
   isAuthenticating: boolean
@@ -36,7 +36,7 @@ export interface AudioButtonProps {
  * Props for the chat input component
  */
 export interface ChatInputProps {
-  pendingCapture: any
+  pendingCapture: PendingCapture | null
   onSubmit?: (message: string) => void
   disabled?: boolean
 }

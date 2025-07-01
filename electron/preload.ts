@@ -30,10 +30,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDriveSyncProgress: (callback: (progress: any) => void) => {
     ipcRenderer.on('drive-sync-progress', (_event, progress) => callback(progress))
   },
-
-  // ========== UPDATED AUTHENTICATION APIS ==========
   
-  // Authentication - FIXED: Use consistent naming
+  // Authentication
   auth: {
     getUser: () => ipcRenderer.invoke('auth-get-user'),
     signIn: () => ipcRenderer.invoke('auth-sign-in'),

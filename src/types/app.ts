@@ -18,6 +18,14 @@ export type CalendarRange = 'today' | 'week' | 'next-week'
 
 /**
  * Represents a chat message in the conversation interface
+ *
+ * NOTE: This is the application's internal message type for UI and chat history.
+ * It includes metadata (id, timestamp, screenshot, drive/calendar context, etc.)
+ * and is used for rendering and managing messages in the frontend.
+ *
+ * This is DIFFERENT from ChatMessage in src/types/api.ts, which is used for
+ * communicating with the OpenAI API and supports multimodal content (text/images).
+ * Do not confuse or interchange these types—they serve different purposes.
  */
 export interface Message {
   id: string

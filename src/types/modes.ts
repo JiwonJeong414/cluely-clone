@@ -3,8 +3,9 @@
  * TypeScript interfaces for props passed to different mode components
  */
 
-import type { User, GoogleConnection, CalendarEvent, Place, SyncProgress } from '../../electron/preload'
-import type { AppMode, CalendarRange } from './app'
+import type { User, GoogleConnection, CalendarEvent, Place, SyncProgress, CleanupCandidate } from '../../electron/preload'
+import type { AppMode, CalendarRange, NewEvent } from './app'
+import type { FileCluster } from './services'
 
 /**
  * Props for the calendar mode component
@@ -17,17 +18,8 @@ export interface CalendarModeProps {
   isLoadingCalendar: boolean
   showCreateEventForm: boolean
   setShowCreateEventForm: (show: boolean) => void
-  newEvent: {
-    summary: string
-    description: string
-    startDate: string
-    startTime: string
-    endDate: string
-    endTime: string
-    location: string
-    attendees: string
-  }
-  setNewEvent: (event: any) => void
+  newEvent: NewEvent
+  setNewEvent: (event: NewEvent) => void
   isCreatingEvent: boolean
   handleCalendarRangeChange: (range: CalendarRange) => void
   handleCreateEvent: () => void
@@ -40,7 +32,7 @@ export interface CalendarModeProps {
 export interface CleanupModeProps {
   user: User
   googleConnection: GoogleConnection
-  cleanupCandidates: any[]
+  cleanupCandidates: CleanupCandidate[]
   loadCleanupCandidates: () => void
   handleDeleteFiles: (fileIds: string[]) => void
 }
@@ -51,7 +43,7 @@ export interface CleanupModeProps {
 export interface DriveModeProps {
   user: User
   googleConnection: GoogleConnection
-  syncProgress: any
+  syncProgress: SyncProgress | null
   syncStats: any
   isSyncing: boolean
   handleQuickSync: () => void
@@ -81,7 +73,7 @@ export interface MapsModeProps {
 export interface OrganizeModeProps {
   user: User
   googleConnection: GoogleConnection
-  organizationClusters: any[]
+  organizationClusters: FileCluster[]
   isAnalyzing: boolean
   analyzeForOrganization: () => void
 }
@@ -113,8 +105,8 @@ export interface ModeRendererProps {
   syncProgress: SyncProgress | null
   syncStats: any
   isSyncing: boolean
-  cleanupCandidates: any[]
-  organizationClusters: any[]
+  cleanupCandidates: CleanupCandidate[]
+  organizationClusters: FileCluster[]
   isAnalyzing: boolean
   handleQuickSync: () => void
   handleDeepSync: () => void
@@ -129,17 +121,8 @@ export interface ModeRendererProps {
   isLoadingCalendar: boolean
   showCreateEventForm: boolean
   setShowCreateEventForm: (show: boolean) => void
-  newEvent: {
-    summary: string
-    description: string
-    startDate: string
-    startTime: string
-    endDate: string
-    endTime: string
-    location: string
-    attendees: string
-  }
-  setNewEvent: (event: any) => void
+  newEvent: NewEvent
+  setNewEvent: (event: NewEvent) => void
   isCreatingEvent: boolean
   handleCalendarRangeChange: (range: CalendarRange) => void
   handleCreateEvent: () => void
@@ -161,8 +144,8 @@ export interface ModeRendererProps {
  * Props for the authentication button component
  */
 export interface AuthButtonProps {
-  user: any
-  googleConnection: any
+  user: User | null
+  googleConnection: GoogleConnection
   onSignIn: () => Promise<void>
   onSignOut: () => Promise<void>
   className?: string
